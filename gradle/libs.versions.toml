@@ -1,0 +1,30 @@
+[versions]
+echoCommon = "1.0"
+kotlin = "2.2.10"
+agp = "8.12.1"
+gradleShadow = "9.0.2"
+ktor = "3.0.0-beta-2"
+ytmkt = "0.4.3"  
+newpipe = "v0.24.5"
+newpipeExtractorKmp = "1.0"
+
+[libraries]
+echo-common = { module = "dev.brahmkshatriya.echo:common", version.ref = "echoCommon" }
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+junit = { module = "junit:junit", version = "4.13.2" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version = "1.10.2" }
+
+ytmkt = { module = "dev.toastbits:ytm-kt", version.ref = "ytmkt" }
+newpipe = { module = "com.github.teamnewpipe:NewPipeExtractor", version.ref = "newpipe" }
+newpipe-extractor-kmp = { module = "io.github.yushosei:newpipe-extractor-kmp", version.ref = "newpipeExtractorKmp" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+gradle-shadow = { id = "com.gradleup.shadow", version.ref = "gradleShadow" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
