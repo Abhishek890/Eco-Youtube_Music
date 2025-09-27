@@ -70,6 +70,8 @@ import dev.toastbits.ytmkt.model.external.SongLikedStatus
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider.Quality.HIGH
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider.Quality.LOW
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtist
+import dev.toastbits.ytmkt.model.external.mediaitem.YtmPlaylist
+import dev.toastbits.ytmkt.model.external.mediaitem.YtmSong
 import dev.toastbits.ytmkt.model.external.YoutubeVideoFormat
 import dev.brahmkshatriya.echo.extension.NewPipeExtractorKmpVideoFormatsEndpoint
 import io.ktor.client.network.sockets.ConnectTimeoutException
@@ -81,7 +83,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.encodeToString
 import java.security.MessageDigest
-
+import dev.toastbits.ytmkt.endpoint.SearchResults
+import dev.toastbits.ytmkt.endpoint.SearchType
 
 private fun createShelfPagedDataFromMediaItems(mediaItems: PagedData<EchoMediaItem>): PagedData<Shelf> {
     return PagedData.Continuous { continuation ->
@@ -103,7 +106,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             false
         ),
         SettingSwitch(
-            "Prefer Videos [Not Working For Now]",
+            "Prefer Videos [Not Working Right Now]",
             "prefer_videos",
             "Prefer videos over audio when available",
             false
@@ -138,7 +141,6 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     private val libraryEndPoint = EchoLibraryEndPoint(api)
     private val songEndPoint = EchoSongEndPoint(api)
     private val songRelatedEndpoint = EchoSongRelatedEndpoint(api)
-    private val videoEndpoint = EchoVideoEndpoint(api)
     private val playlistEndPoint = EchoPlaylistEndpoint(api)
     private val lyricsEndPoint = EchoLyricsEndPoint(api)
     private val searchSuggestionsEndpoint = EchoSearchSuggestionsEndpoint(api)
@@ -174,72 +176,98 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                     ?: throw Exception("No video ID found in streamable extras. This track may not be playable.")
                 
                 println("Loading streamable media for video ID: $videoId")
-                
-                // Try NewPipe first
                 try {
+                    try {
+                        if (api.visitor_id == null) {
+                            println("Visitor ID is null, trying to get a new one...")
+                            api.visitor_id = visitorEndpoint.getVisitorId()
+                            println("Successfully set visitor ID: ${api.visitor_id}")
+                        } else {
+                            println("Using existing visitor ID: ${api.visitor_id}")
+                        }
+                    } catch (e: Exception) {
+                        println("Exception ensuring visitor ID: ${e.message}")
+                    }
+                    
                     val newPipeExtractor = NewPipeExtractorKmpVideoFormatsEndpoint(api)
                     
                     val formatsResult = newPipeExtractor.getVideoFormats(videoId, include_non_default = true, filter = null)
                     
-                    if (formatsResult.isSuccess) {
-                        val formats = formatsResult.getOrThrow()
-                        
-                        val validFormats = formats.filter { it.url != null }
-                        
-                        if (validFormats.isNotEmpty()) {
-                            val audioFormats = validFormats.filter { 
-                                it.mimeType?.startsWith("audio/") == true
-                            }
-                            
-                            if (audioFormats.isNotEmpty()) {
-                                val audioSources = audioFormats.map { format ->
-                                    val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
-                                    Streamable.Source.Http(
-                                        request = NetworkRequest(url = format.url!!),
-                                        type = Streamable.SourceType.Progressive,
-                                        quality = bitrateKbps.toInt(),
-                                        title = "Audio - ${format.mimeType}${if (bitrateKbps > 0) " - ${bitrateKbps}kbps" else ""}"
-                                    )
-                                }
-                                
-                                println("Successfully loaded streamable media using NewPipe extractor with ${audioSources.size} quality options")
-                                return Streamable.Media.Server(audioSources, false)
-                            }
+                    if (formatsResult.isFailure) {
+                        val exception = formatsResult.exceptionOrNull()
+                        throw Exception("Failed to get video formats: ${exception?.message ?: "Unknown error"}. The track may not be available.")
+                    }
+                    
+                    val formats = formatsResult.getOrThrow()
+                    
+                    println("Found ${formats.size} total formats")
+                    formats.forEach { format ->
+                        println("Format: ${format.mimeType}, bitrate: ${format.bitrate}, hasUrl: ${format.url != null}")
+                    }
+                    
+                    val validFormats = formats.filter { it.url != null }
+                    
+                    if (validFormats.isEmpty()) {
+                        throw Exception("No valid formats with URLs available for this track. The track may not be available in your region.")
+                    }
+                    
+                    val audioFormats = validFormats.filter { 
+                        it.mimeType.startsWith("audio/") 
+                    }
+                    
+                    val videoFormats = if (preferVideos) {
+                        validFormats.filter { 
+                            it.mimeType.startsWith("video/") 
+                        }
+                    } else {
+                        emptyList()
+                    }
+                    
+                    if (audioFormats.isEmpty() && videoFormats.isEmpty()) {
+                        throw Exception("No playable formats found for this track. The track may be region-restricted or unavailable.")
+                    }
+                    
+                    val audioSources = audioFormats.map { format ->
+                        val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
+                        Streamable.Source.Http(
+                            request = NetworkRequest(url = format.url!!),
+                            type = Streamable.SourceType.Progressive,
+                            quality = bitrateKbps.toInt(),
+                            title = "Audio - ${format.mimeType}${if (bitrateKbps > 0) " - ${bitrateKbps}kbps" else ""}"
+                        )
+                    }
+                    
+                    val videoSources = videoFormats.map { format ->
+                        val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
+                        Streamable.Source.Http(
+                            request = NetworkRequest(url = format.url!!),
+                            type = Streamable.SourceType.Progressive,
+                            quality = bitrateKbps.toInt(),
+                            title = "Video - ${format.mimeType}${if (format.bitrate != null) " - ${bitrateKbps}kbps" else ""}"
+                        )
+                    }
+                    
+                    return when {
+                        preferVideos && videoSources.isNotEmpty() && audioSources.isNotEmpty() -> {
+                            Streamable.Media.Server(
+                                sources = listOf(audioSources.first(), videoSources.first()),
+                                merged = true
+                            )
+                        }
+                        videoSources.isNotEmpty() && !preferVideos -> {
+                            Streamable.Media.Server(videoSources, false)
+                        }
+                        audioSources.isNotEmpty() -> {
+                            Streamable.Media.Server(audioSources, false)
+                        }
+                        else -> {
+                            throw Exception("No valid formats with URLs available. The track may not be available.")
                         }
                     }
                 } catch (e: Exception) {
                     println("NewPipe extractor failed: ${e.message}")
                     e.printStackTrace()
-                }
-                
-                // Fallback to current YouTube Music implementation
-                println("Falling back to YouTube Music API for video ID: $videoId")
-                try {
-                    ensureVisitorId()
-                    val (video, _) = videoEndpoint.getVideo(true, videoId)
-                    
-                    val audioSources = video.streamingData.adaptiveFormats
-                        .filter { it.mimeType?.lowercase()?.contains("audio/") == true && it.url != null }
-                        .map { format ->
-                            val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 128
-                            Streamable.Source.Http(
-                                request = NetworkRequest(url = format.url!!),
-                                type = Streamable.SourceType.Progressive,
-                                quality = bitrateKbps.toInt(),
-                                title = "Audio - ${format.mimeType ?: "audio/unknown"}${if (format.bitrate != null) " - ${bitrateKbps}kbps" else ""}"
-                            )
-                        }
-                    
-                    if (audioSources.isNotEmpty()) {
-                        println("Successfully loaded streamable media using YouTube Music API with ${audioSources.size} quality options")
-                        return Streamable.Media.Server(audioSources, false)
-                    } else {
-                        throw Exception("No audio sources found in YouTube Music API")
-                    }
-                } catch (e: Exception) {
-                    println("YouTube Music API also failed: ${e.message}")
-                    e.printStackTrace()
-                    throw Exception("Failed to load streamable media using both NewPipe and YouTube Music API: ${e.message}")
+                    throw Exception("Failed to load streamable media using NewPipe extractor: ${e.message}")
                 }
             }
             Streamable.MediaType.Background -> {
@@ -251,33 +279,27 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         }
     }
    override suspend fun loadTrack(track: Track, isDownload: Boolean): Track = coroutineScope {
-        ensureVisitorId()
-        
-        val deferred = async { songEndPoint.loadSong(track.id).getOrThrow() }
-        val (video, _) = videoEndpoint.getVideo(true, track.id)
-
-        val hasAudio = video.streamingData.adaptiveFormats.any { 
-            it.mimeType.contains("audio") && it.url != null 
+        try {
+            if (api.visitor_id == null) {
+                println("Visitor ID is null in loadTrack, trying to get a new one...")
+                api.visitor_id = visitorEndpoint.getVisitorId()
+                println("Successfully set visitor ID in loadTrack: ${api.visitor_id}")
+            }
+        } catch (e: Exception) {
+            println("Exception ensuring visitor ID in loadTrack: ${e.message}")
         }
         
+        val deferred = async { songEndPoint.loadSong(track.id).getOrThrow() }          
         val newTrack = deferred.await()
         newTrack.copy(
-            description = video.videoDetails.shortDescription,
+            description = newTrack.description,
             artists = newTrack.artists.ifEmpty {
-                video.videoDetails.run { listOf(Artist(channelId, author)) }
+                newTrack.artists
             },
-            streamables = if (hasAudio) {
-                listOf(Streamable.server("AUDIO_MP3", 0, "Audio", mapOf("videoId" to track.id)))
-            } else {
-                emptyList()
-            },
-            plays = video.videoDetails.viewCount?.toLongOrNull(),
+            streamables = listOf(Streamable.server("AUDIO_MP3", 0, "Audio", mapOf("videoId" to track.id))),
+            plays = newTrack.plays,
             extras = newTrack.extras.toMutableMap().apply {
                 put("videoId", track.id)
-                put("channelId", video.videoDetails.channelId ?: "")
-                put("author", video.videoDetails.author ?: "")
-                put("viewCount", video.videoDetails.viewCount ?: "0")
-                put("lengthSeconds", video.videoDetails.lengthSeconds ?: "0")
             }
         )
     }
@@ -325,46 +347,9 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     private var oldSearch: Pair<String, List<Shelf>>? = null
     
     override suspend fun loadSearchFeed(query: String): Feed<Shelf> {
-        val tabs = if (query.isNotBlank()) {
-            val search = api.Search.search(query, null).getOrThrow()
-            oldSearch = query to search.categories.map { (itemLayout, _) ->
-                try {
-                    SearchResultsFixer.fixSearchResultShelf(itemLayout.toShelf(api, SINGLES, thumbnailQuality))
-                } catch (e: Exception) {
-                    itemLayout.toShelf(api, SINGLES, thumbnailQuality)
-                }
-            }
-            val searchTabs = search.categories.mapNotNull { (item, filter) ->
-                filter?.let {
-                    Tab(
-                        id = it.params,
-                        title = item.title?.getString(language) ?: "???",
-                        isSort = false,
-                        extras = mapOf(
-                            "browseId" to it.params,
-                            "category" to (item.title?.getString(language) ?: "unknown"),
-                            "filterType" to it.type.name,
-                            "isSearchTab" to "true"
-                        )
-                    )
-                }
-            }
-            listOf(
-                Tab(
-                    id = "All", 
-                    title = "All",
-                    isSort = false,
-                    extras = mapOf(
-                        "browseId" to "All",
-                        "category" to "All",
-                        "isSearchTab" to "true",
-                        "isDefaultTab" to "true"
-                    )
-                )
-            ) + searchTabs
-        } else {
+        if (query.isBlank()) {
             val result = songFeedEndPoint.getSongFeed().getOrThrow()
-            result.filter_chips?.map {
+            val filterChips = result.filter_chips?.map {
                 Tab(
                     id = it.params,
                     title = it.text.getString(language),
@@ -377,88 +362,17 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                     )
                 )
             } ?: emptyList()
-        }
-
-        return Feed(tabs) { tab ->
-            val pagedData = if (query.isNotBlank()) {
-                val params = if (tab == null || tab.id == "All") {
-                    null
-                } else {
-                    tab.id
-                }
-                
-                PagedData.Single {
+            
+            return Feed(filterChips) { tab ->
+                val pagedData = PagedData.Continuous { continuation ->
                     try {
-                        if (params == null && oldSearch?.first == query) {
-                            return@Single oldSearch?.second ?: emptyList()
-                        }
-                        val search = try {
-                            api.Search.search(query, params).getOrThrow()
-                        } catch (e: Exception) {
-                            return@Single emptyList()
-                        }
+                        val params = tab?.id
+                        val result = songFeedEndPoint.getSongFeed(
+                            params = params, continuation = continuation
+                        ).getOrThrow()
                         
-                        try {
-                            search.categories.map { (itemLayout, _) ->
-                                try {
-                                    itemLayout.items.mapNotNull { item ->
-                                        try {
-                                            val shelf = item.toEchoMediaItem(false, thumbnailQuality)?.toShelf()
-                                            if (shelf != null) {
-                                                try {
-                                                    SearchResultsFixer.fixSearchResultShelf(shelf)
-                                                } catch (e: Exception) {
-                                                    shelf
-                                                }
-                                            } else null
-                                        } catch (e: Exception) {
-                                            null
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    emptyList()
-                                }
-                            }.flatten()
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                }
-            } else if (tab != null) {
-                PagedData.Continuous {
-                    try {
-                        val params = tab.id
-                        val continuation = it
-                        val result = try {
-                            songFeedEndPoint.getSongFeed(
-                                params = params, continuation = continuation
-                            ).getOrThrow()
-                        } catch (e: Exception) {
-                            return@Continuous Page(emptyList(), null)
-                        }
-                        
-                        val data = try {
-                            result.layouts.mapNotNull { itemLayout ->
-                                try {
-                                    val shelf = try {
-                                        itemLayout.toShelf(api, SINGLES, thumbnailQuality)
-                                    } catch (e: Exception) {
-                                        return@mapNotNull null
-                                    }
-                                    
-                                    try {
-                                        SearchResultsFixer.fixSearchResultShelf(shelf)
-                                    } catch (e: Exception) {
-                                        shelf
-                                    }
-                                } catch (e: Exception) {
-                                    null
-                                }
-                            }
-                        } catch (e: Exception) {
-                            emptyList()
+                        val data = result.layouts.map { itemLayout ->
+                            itemLayout.toShelf(api, SINGLES, thumbnailQuality)
                         }
                         
                         Page(data, result.ctoken)
@@ -466,14 +380,218 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                         Page(emptyList(), null)
                     }
                 }
-            } else {
-                PagedData.Single { listOf() }
+                Feed.Data(pagedData)
             }
-            
-            Feed.Data(pagedData as PagedData<Shelf>)
+        }
+
+        val tabs = listOf(
+            Tab("all", "All"),
+            Tab("songs", "Songs"),
+            Tab("videos", "Videos"),
+            Tab("albums", "Albums"),
+            Tab("artists", "Artists"),
+            Tab("playlists", "Playlists")
+        )
+
+        return Feed(tabs) { tab ->
+            when (tab?.id) {
+                "all" -> createAllTab(query)
+                "songs" -> createSongsTab(query)
+                "videos" -> createVideosTab(query)
+                "albums" -> createAlbumsTab(query)
+                "artists" -> createArtistsTab(query)
+                "playlists" -> createPlaylistsTab(query)
+                else -> createAllTab(query) 
+            }
         }
     }
 
+    private suspend fun createAllTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val allShelves = mutableListOf<Shelf>()
+            try {
+                val songResults = api.Search.search(
+                    query,
+                    params = SearchType.SONG.getDefaultParams()
+                ).getOrNull()
+                if (songResults != null) {
+                    allShelves.addAll(convertSearchResultsToShelves(songResults))
+                }
+            } catch (e: Exception) {
+                println("Songs search failed in All tab: ${e.message}")
+            }
+            try {
+                val videoResults = api.Search.search(
+                    query,
+                    params = SearchType.VIDEO.getDefaultParams()
+                ).getOrNull()
+                if (videoResults != null) {
+                    allShelves.addAll(convertSearchResultsToShelves(videoResults))
+                }
+            } catch (e: Exception) {
+                println("Videos search failed in All tab: ${e.message}")
+            }
+            try {
+                val albumResults = api.Search.search(
+                    query,
+                    params = SearchType.ALBUM.getDefaultParams()
+                ).getOrNull()
+                if (albumResults != null) {
+                    allShelves.addAll(convertSearchResultsToShelves(albumResults))
+                }
+            } catch (e: Exception) {
+                println("Albums search failed in All tab: ${e.message}")
+            }
+            try {
+                val artistResults = api.Search.search(
+                    query,
+                    params = SearchType.ARTIST.getDefaultParams()
+                ).getOrNull()
+                if (artistResults != null) {
+                    allShelves.addAll(convertSearchResultsToShelves(artistResults))
+                }
+            } catch (e: Exception) {
+                println("Artists search failed in All tab: ${e.message}")
+            }          
+            try {
+                val playlistResults = api.Search.search(
+                    query,
+                    params = SearchType.PLAYLIST.getDefaultParams()
+                ).getOrNull()
+                if (playlistResults != null) {
+                    allShelves.addAll(convertSearchResultsToShelves(playlistResults))
+                }
+            } catch (e: Exception) {
+                println("Playlists search failed in All tab: ${e.message}")
+            }
+            
+            allShelves.toFeedData()
+        } catch (e: Exception) {
+            println("All tab search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun createSongsTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val searchResult = api.Search.search(
+                query,
+                params = SearchType.SONG.getDefaultParams()
+            ).getOrThrow()
+            
+            val shelves = convertSearchResultsToShelves(searchResult)
+            shelves.toFeedData()
+        } catch (e: Exception) {
+            println("Songs search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun createVideosTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val searchResult = api.Search.search(
+                query,
+                params = SearchType.VIDEO.getDefaultParams()
+            ).getOrThrow()
+            
+            val shelves = convertSearchResultsToShelves(searchResult)
+            shelves.toFeedData()
+        } catch (e: Exception) {
+            println("Videos search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun createAlbumsTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val searchResult = api.Search.search(
+                query,
+                params = SearchType.ALBUM.getDefaultParams()
+            ).getOrThrow()
+            
+            val shelves = convertSearchResultsToShelves(searchResult)
+            shelves.toFeedData()
+        } catch (e: Exception) {
+            println("Albums search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun createArtistsTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val searchResult = api.Search.search(
+                query,
+                params = SearchType.ARTIST.getDefaultParams()
+            ).getOrThrow()
+            
+            val shelves = convertSearchResultsToShelves(searchResult)
+            shelves.toFeedData()
+        } catch (e: Exception) {
+            println("Artists search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun createPlaylistsTab(query: String): Feed.Data<Shelf> {
+        return try {
+            val searchResult = api.Search.search(
+                query,
+                params = SearchType.PLAYLIST.getDefaultParams()
+            ).getOrThrow()
+            
+            val shelves = convertSearchResultsToShelves(searchResult)
+            shelves.toFeedData()
+        } catch (e: Exception) {
+            println("Playlists search failed: ${e.message}")
+            emptyList<Shelf>().toFeedData()
+        }
+    }
+
+    private suspend fun convertSearchResultsToShelves(searchResults: SearchResults): List<Shelf> {
+        val shelves = mutableListOf<Shelf>()
+        
+        for ((layout, filter) in searchResults.categories) {
+            val title = layout.title?.getString("en") ?: "Results"
+            val items = layout.items
+            
+            if (items.isNotEmpty()) {
+                val echoItems = items.mapNotNull { item ->
+                    when (item) {
+                        is YtmSong -> item.toTrack(thumbnailQuality)
+                        is YtmArtist -> item.toArtist(thumbnailQuality)
+                        is YtmPlaylist -> {
+                            if (item.type == YtmPlaylist.Type.ALBUM) {
+                                item.toAlbum(false, thumbnailQuality)
+                            } else {
+                                item.toPlaylist(thumbnailQuality)
+                            }
+                        }
+                        else -> null
+                    }
+                }
+                
+                if (echoItems.isNotEmpty()) {
+                    val shelf = if (echoItems.all { it is Track }) {
+                        Shelf.Lists.Tracks(
+                            id = "search_${title.lowercase().replace(" ", "_")}_${System.currentTimeMillis()}",
+                            title = title,
+                            list = echoItems.filterIsInstance<Track>()
+                        )
+                    } else {
+                        Shelf.Lists.Items(
+                            id = "search_${title.lowercase().replace(" ", "_")}_${System.currentTimeMillis()}",
+                            title = title,
+                            list = echoItems
+                        )
+                    }
+                    shelves.add(shelf)
+                }
+            }
+        }
+        
+        return shelves
+    }
+    
     override suspend fun loadTracks(radio: Radio): Feed<Track> =
         PagedData.Single { json.decodeFromString<List<Track>>(radio.extras["tracks"]!!) }.toFeed()
 
@@ -783,7 +901,9 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         
         return Feed(tabs) { tab ->
             val pagedData = PagedData.Continuous<Shelf> { cont ->
-                val browseId = tab?.id ?: "FEmusic_library_landing"               
+                val browseId = tab?.id ?: "FEmusic_library_landing"
+                
+                // Special handling for the Artists tab to load followed artists
                 if (browseId == "FEmusic_library_corpus_track_artists") {
                     try {
                         val artists = withUserAuth { auth ->
@@ -798,6 +918,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                         Page(emptyList(), null)
                     }
                 } else {
+                    // Use the generic library feed loading for other tabs
                     val (result, ctoken) = withUserAuth { libraryEndPoint.loadLibraryFeed(browseId, cont) }
                     val data = result.mapNotNull { playlist ->
                         playlist.toEchoMediaItem(false, thumbnailQuality)?.toShelf()
