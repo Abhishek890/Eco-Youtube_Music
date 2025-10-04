@@ -61,15 +61,15 @@ class EchoVideoEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
 
 @Serializable
 data class YoutubeFormatResponse(
-    val streamingData: StreamingData,
+    val streamingData: StreamingData? = null,
     val videoDetails: VideoDetails
 )
 
 @Serializable
 data class StreamingData(
-    val expiresInSeconds: String,
-    val hlsManifestUrl: String?,
-    val adaptiveFormats: List<AdaptiveFormat>
+    val expiresInSeconds: String? = null,
+    val hlsManifestUrl: String? = null,
+    val adaptiveFormats: List<AdaptiveFormat> = emptyList()
 )
 
 @Serializable

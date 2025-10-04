@@ -79,7 +79,6 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.headers
 import io.ktor.client.request.request
 import io.ktor.http.headers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.encodeToString
 import java.security.MessageDigest
@@ -103,10 +102,10 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             "High Thumbnail Quality",
             "high_quality",
             "Use high quality thumbnails, will cause more data usage.",
-            false
+            true
         ),
         SettingSwitch(
-            "Prefer Videos [Not Working Right Now]",
+            "Prefer Videos [Not Working For Now]",
             "prefer_videos",
             "Prefer videos over audio when available",
             false
@@ -141,12 +140,14 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     private val libraryEndPoint = EchoLibraryEndPoint(api)
     private val songEndPoint = EchoSongEndPoint(api)
     private val songRelatedEndpoint = EchoSongRelatedEndpoint(api)
+    private val videoEndpoint = EchoVideoEndpoint(api)
     private val playlistEndPoint = EchoPlaylistEndpoint(api)
     private val lyricsEndPoint = EchoLyricsEndPoint(api)
     private val searchSuggestionsEndpoint = EchoSearchSuggestionsEndpoint(api)
     private val searchEndpoint = EchoSearchEndpoint(api)
     private val editorEndpoint = EchoEditPlaylistEndpoint(api)
     private val newPipeExtractor by lazy { NewPipeExtractorKmpVideoFormatsEndpoint(api) }
+    private val ytmSongConverter by lazy { YtmSongConverter() }
     companion object {
         const val ENGLISH = "en-GB"
         const val SINGLES = "Singles"
@@ -176,6 +177,87 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                     ?: throw Exception("No video ID found in streamable extras. This track may not be playable.")
                 
                 println("Loading streamable media for video ID: $videoId")
+                
+                // Try NewPipe first 
+                try {
+                    val newPipeExtractor = NewPipeExtractorKmpVideoFormatsEndpoint(api)
+                    
+                    val formatsResult = newPipeExtractor.getVideoFormats(videoId, include_non_default = true, filter = null)
+                    
+                    if (formatsResult.isSuccess) {
+                        val formats = formatsResult.getOrThrow()
+                        
+                        println("Found ${formats.size} total formats from NewPipe")
+                        formats.forEach { format ->
+                            println("Format: ${format.mimeType}, bitrate: ${format.bitrate}, hasUrl: ${format.url != null}")
+                        }
+                        
+                        val validFormats = formats.filter { it.url != null }
+                        
+                        if (validFormats.isNotEmpty()) {
+                            val audioFormats = validFormats.filter { 
+                                it.mimeType.startsWith("audio/") 
+                            }
+                            
+                            val videoFormats = if (preferVideos) {
+                                validFormats.filter { 
+                                    it.mimeType.startsWith("video/") 
+                                }
+                            } else {
+                                emptyList()
+                            }
+                            
+                            if (audioFormats.isNotEmpty() || videoFormats.isNotEmpty()) {
+                                val audioSources = audioFormats.map { format ->
+                                    val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
+                                    Streamable.Source.Http(
+                                        request = NetworkRequest(url = format.url!!),
+                                        type = Streamable.SourceType.Progressive,
+                                        quality = bitrateKbps.toInt(),
+                                        title = "Audio - ${format.mimeType}${if (bitrateKbps > 0) " - ${bitrateKbps}kbps" else ""}"
+                                    )
+                                }
+                                
+                                val videoSources = videoFormats.map { format ->
+                                    val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
+                                    Streamable.Source.Http(
+                                        request = NetworkRequest(url = format.url!!),
+                                        type = Streamable.SourceType.Progressive,
+                                        quality = bitrateKbps.toInt(),
+                                        title = "Video - ${format.mimeType}${if (format.bitrate != null) " - ${bitrateKbps}kbps" else ""}"
+                                    )
+                                }
+                                
+                                val result = when {
+                                    preferVideos && videoSources.isNotEmpty() && audioSources.isNotEmpty() -> {
+                                        Streamable.Media.Server(
+                                            sources = listOf(audioSources.first(), videoSources.first()),
+                                            merged = true
+                                        )
+                                    }
+                                    videoSources.isNotEmpty() && !preferVideos -> {
+                                        Streamable.Media.Server(videoSources, false)
+                                    }
+                                    audioSources.isNotEmpty() -> {
+                                        Streamable.Media.Server(audioSources, false)
+                                    }
+                                    else -> null
+                                }
+                                
+                                if (result != null) {
+                                    println("Successfully loaded streamable media using NewPipe extractor")
+                                    return result
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("NewPipe extractor failed: ${e.message}")
+                    e.printStackTrace()
+                }
+                
+                // Fallback to YouTube Music API
+                println("Falling back to YouTube Music API for video ID: $videoId")
                 try {
                     try {
                         if (api.visitor_id == null) {
@@ -189,85 +271,34 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                         println("Exception ensuring visitor ID: ${e.message}")
                     }
                     
-                    val newPipeExtractor = NewPipeExtractorKmpVideoFormatsEndpoint(api)
+                    val (video, _) = videoEndpoint.getVideo(true, videoId)
                     
-                    val formatsResult = newPipeExtractor.getVideoFormats(videoId, include_non_default = true, filter = null)
-                    
-                    if (formatsResult.isFailure) {
-                        val exception = formatsResult.exceptionOrNull()
-                        throw Exception("Failed to get video formats: ${exception?.message ?: "Unknown error"}. The track may not be available.")
+                    if (video.streamingData == null) {
+                        throw Exception("No streaming data available from YouTube Music API. The video may be restricted, age-gated, or unavailable.")
                     }
                     
-                    val formats = formatsResult.getOrThrow()
-                    
-                    println("Found ${formats.size} total formats")
-                    formats.forEach { format ->
-                        println("Format: ${format.mimeType}, bitrate: ${format.bitrate}, hasUrl: ${format.url != null}")
-                    }
-                    
-                    val validFormats = formats.filter { it.url != null }
-                    
-                    if (validFormats.isEmpty()) {
-                        throw Exception("No valid formats with URLs available for this track. The track may not be available in your region.")
-                    }
-                    
-                    val audioFormats = validFormats.filter { 
-                        it.mimeType.startsWith("audio/") 
-                    }
-                    
-                    val videoFormats = if (preferVideos) {
-                        validFormats.filter { 
-                            it.mimeType.startsWith("video/") 
-                        }
-                    } else {
-                        emptyList()
-                    }
-                    
-                    if (audioFormats.isEmpty() && videoFormats.isEmpty()) {
-                        throw Exception("No playable formats found for this track. The track may be region-restricted or unavailable.")
-                    }
-                    
-                    val audioSources = audioFormats.map { format ->
-                        val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
-                        Streamable.Source.Http(
-                            request = NetworkRequest(url = format.url!!),
-                            type = Streamable.SourceType.Progressive,
-                            quality = bitrateKbps.toInt(),
-                            title = "Audio - ${format.mimeType}${if (bitrateKbps > 0) " - ${bitrateKbps}kbps" else ""}"
-                        )
-                    }
-                    
-                    val videoSources = videoFormats.map { format ->
-                        val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 0
-                        Streamable.Source.Http(
-                            request = NetworkRequest(url = format.url!!),
-                            type = Streamable.SourceType.Progressive,
-                            quality = bitrateKbps.toInt(),
-                            title = "Video - ${format.mimeType}${if (format.bitrate != null) " - ${bitrateKbps}kbps" else ""}"
-                        )
-                    }
-                    
-                    return when {
-                        preferVideos && videoSources.isNotEmpty() && audioSources.isNotEmpty() -> {
-                            Streamable.Media.Server(
-                                sources = listOf(audioSources.first(), videoSources.first()),
-                                merged = true
+                    val audioSources = video.streamingData.adaptiveFormats
+                        .filter { it.mimeType.lowercase().contains("audio/") && it.url != null }
+                        .map { format ->
+                            val bitrateKbps = if (format.bitrate != null) format.bitrate / 1000 else 128
+                            Streamable.Source.Http(
+                                request = NetworkRequest(url = format.url!!),
+                                type = Streamable.SourceType.Progressive,
+                                quality = bitrateKbps.toInt(),
+                                title = "Audio - ${format.mimeType}${if (format.bitrate != null) " - ${bitrateKbps}kbps" else ""}"
                             )
                         }
-                        videoSources.isNotEmpty() && !preferVideos -> {
-                            Streamable.Media.Server(videoSources, false)
-                        }
-                        audioSources.isNotEmpty() -> {
-                            Streamable.Media.Server(audioSources, false)
-                        }
-                        else -> {
-                            throw Exception("No valid formats with URLs available. The track may not be available.")
-                        }
+                    
+                    if (audioSources.isNotEmpty()) {
+                        println("Successfully loaded streamable media using YouTube Music API with ${audioSources.size} quality options")
+                        return Streamable.Media.Server(audioSources, false)
+                    } else {
+                        throw Exception("No audio sources found in YouTube Music API response")
                     }
                 } catch (e: Exception) {
-                    println("NewPipe extractor failed: ${e.message}")
+                    println("YouTube Music API also failed: ${e.message}")
                     e.printStackTrace()
-                    throw Exception("Failed to load streamable media using NewPipe extractor: ${e.message}")
+                    throw Exception("Failed to load streamable media using both NewPipe and YouTube Music API: ${e.message}")
                 }
             }
             Streamable.MediaType.Background -> {
@@ -278,30 +309,60 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             }
         }
     }
-   override suspend fun loadTrack(track: Track, isDownload: Boolean): Track = coroutineScope {
+   override suspend fun loadTrack(track: Track, isDownload: Boolean): Track {
         try {
-            if (api.visitor_id == null) {
-                println("Visitor ID is null in loadTrack, trying to get a new one...")
-                api.visitor_id = visitorEndpoint.getVisitorId()
-                println("Successfully set visitor ID in loadTrack: ${api.visitor_id}")
-            }
+            ensureVisitorId()
         } catch (e: Exception) {
-            println("Exception ensuring visitor ID in loadTrack: ${e.message}")
+            println("Failed to ensure visitor ID in loadTrack: ${e.message}")
         }
-        
-        val deferred = async { songEndPoint.loadSong(track.id).getOrThrow() }          
-        val newTrack = deferred.await()
-        newTrack.copy(
-            description = newTrack.description,
-            artists = newTrack.artists.ifEmpty {
-                newTrack.artists
-            },
-            streamables = listOf(Streamable.server("AUDIO_MP3", 0, "Audio", mapOf("videoId" to track.id))),
-            plays = newTrack.plays,
-            extras = newTrack.extras.toMutableMap().apply {
-                put("videoId", track.id)
-            }
-        )
+
+        val ytmTrack = runCatching {
+            api.LoadSong.loadSong(track.id).getOrThrow()
+        }.map { ytmSongConverter.toTrack(it) }.getOrNull()
+
+        val legacyTrack = runCatching {
+            songEndPoint.loadSong(track.id).getOrThrow()
+        }.getOrNull()
+
+        val mergedExtras = mutableMapOf<String, String>()
+        ytmTrack?.extras?.let { mergedExtras.putAll(it) }
+        legacyTrack?.extras?.let { mergedExtras.putAll(it) }
+        if (!mergedExtras.containsKey("videoId")) {
+            mergedExtras["videoId"] = track.id
+        }
+
+        val finalTrack = when {
+            ytmTrack != null -> ytmTrack.copy(
+                cover = ytmTrack.cover ?: track.cover ?: legacyTrack?.cover,
+                album = ytmTrack.album ?: legacyTrack?.album,
+                artists = if (ytmTrack.artists.isNotEmpty()) ytmTrack.artists else legacyTrack?.artists ?: track.artists,
+                extras = mergedExtras
+            )
+            legacyTrack != null -> legacyTrack.copy(
+                extras = mergedExtras,
+                streamables = legacyTrack.streamables.takeIf { it.isNotEmpty() } ?: listOf(
+                    Streamable.server(
+                        id = "youtube_music_${track.id}",
+                        quality = 128,
+                        title = "YouTube Music",
+                        extras = mapOf("videoId" to track.id)
+                    )
+                )
+            )
+            else -> track.copy(
+                extras = mergedExtras,
+                streamables = track.streamables.takeIf { it.isNotEmpty() } ?: listOf(
+                    Streamable.server(
+                        id = "youtube_music_${track.id}",
+                        quality = 128,
+                        title = "YouTube Music",
+                        extras = mapOf("videoId" to track.id)
+                    )
+                )
+            )
+        }
+
+        return finalTrack
     }
 
     private suspend fun loadRelated(track: Track): List<Shelf> {
@@ -409,6 +470,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     private suspend fun createAllTab(query: String): Feed.Data<Shelf> {
         return try {
             val allShelves = mutableListOf<Shelf>()
+            
+            // Search for songs
             try {
                 val songResults = api.Search.search(
                     query,
@@ -419,7 +482,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 }
             } catch (e: Exception) {
                 println("Songs search failed in All tab: ${e.message}")
-            }
+            }            
+            // Search for videos
             try {
                 val videoResults = api.Search.search(
                     query,
@@ -430,7 +494,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 }
             } catch (e: Exception) {
                 println("Videos search failed in All tab: ${e.message}")
-            }
+            }           
+            // Search for albums
             try {
                 val albumResults = api.Search.search(
                     query,
@@ -441,7 +506,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 }
             } catch (e: Exception) {
                 println("Albums search failed in All tab: ${e.message}")
-            }
+            }           
+            // Search for artists
             try {
                 val artistResults = api.Search.search(
                     query,
@@ -452,7 +518,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 }
             } catch (e: Exception) {
                 println("Artists search failed in All tab: ${e.message}")
-            }          
+            }           
+            // Search for playlists
             try {
                 val playlistResults = api.Search.search(
                     query,
@@ -819,7 +886,16 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     override suspend fun getMarkAsPlayedDuration(details: TrackDetails): Long? = 30000L
 
     override suspend fun onMarkAsPlayed(details: TrackDetails) {
-        api.user_auth_state?.MarkSongAsWatched?.markSongAsWatched(details.track.id)?.getOrThrow()
+        val authState = api.user_auth_state ?: return
+        val endpoint = authState.MarkSongAsWatched ?: return
+        try {
+            val result = endpoint.markSongAsWatched(details.track.id)
+            if (result.isFailure) {
+                println("MarkSongAsWatched failed: ${result.exceptionOrNull()?.message}")
+            }
+        } catch (e: Exception) {
+            println("MarkSongAsWatched threw: ${e.message}")
+        }
     }
 
         private suspend fun <T> withUserAuth(
@@ -903,7 +979,6 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             val pagedData = PagedData.Continuous<Shelf> { cont ->
                 val browseId = tab?.id ?: "FEmusic_library_landing"
                 
-                // Special handling for the Artists tab to load followed artists
                 if (browseId == "FEmusic_library_corpus_track_artists") {
                     try {
                         val artists = withUserAuth { auth ->
@@ -918,7 +993,6 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                         Page(emptyList(), null)
                     }
                 } else {
-                    // Use the generic library feed loading for other tabs
                     val (result, ctoken) = withUserAuth { libraryEndPoint.loadLibraryFeed(browseId, cont) }
                     val data = result.mapNotNull { playlist ->
                         playlist.toEchoMediaItem(false, thumbnailQuality)?.toShelf()
