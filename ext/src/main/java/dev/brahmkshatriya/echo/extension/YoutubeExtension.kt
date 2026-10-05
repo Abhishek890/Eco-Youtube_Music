@@ -372,7 +372,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
 
     override fun setLoginUser(user: User?) {
         if (user == null) {
-            api.user_auth_state = null
+            api.userAuthState = null
         } else {
             val cookie = user.extras["cookie"] ?: throw Exception("No cookie")
             val auth = user.extras["auth"] ?: throw Exception("No auth")
@@ -383,13 +383,13 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             }
             val authenticationState =
                 dev.toastbits.ytmkt.impl.youtubei.YoutubeiAuthenticationState(api, headers, user.id.ifEmpty { null })
-            api.user_auth_state = authenticationState
+            api.userAuthState = authenticationState
         }
-        api.visitor_id = runCatching { kotlinx.coroutines.runBlocking { components.visitorEndpoint.getVisitorId() } }.getOrNull()
+        api.visitorId = runCatching { kotlinx.coroutines.runBlocking { components.visitorEndpoint.getVisitorId() } }.getOrNull()
     }
 
     override suspend fun getCurrentUser(): User? {
-        val headers = api.user_auth_state?.headers ?: return null
+        val headers = api.userAuthState?.headers ?: return null
         return runCatching {
             val response = api.client.request("https://music.youtube.com/getAccountSwitcherEndpoint") {
                 headers {
@@ -424,7 +424,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     override suspend fun getMarkAsPlayedDuration(details: TrackDetails): Long? = 30000L
 
     override suspend fun onMarkAsPlayed(details: TrackDetails) {
-        val authState = api.user_auth_state ?: return
+        val authState = api.userAuthState ?: return
         val endpoint = authState.MarkSongAsWatched ?: return
         try {
             val result = endpoint.markSongAsWatched(details.track.id)
