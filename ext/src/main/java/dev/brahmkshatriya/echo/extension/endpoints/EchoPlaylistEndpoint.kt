@@ -68,7 +68,7 @@ class EchoPlaylistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
             }
         }
         val (playlist, relation) =
-            parsePlaylistResponse(cleanId(id), res, api.data_language, api)
+            parsePlaylistResponse(cleanId(id), res, api.dataLocale.toTag(), api)
         val songs = PagedData.Continuous { token ->
             if (token == null) {
                 val ytmSongs = playlist.items ?: emptyList()
