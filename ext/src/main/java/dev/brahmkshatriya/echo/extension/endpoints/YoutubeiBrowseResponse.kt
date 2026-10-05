@@ -168,7 +168,7 @@ data class YoutubeiBrowseResponse(
                 ?: secondSubtitle?.runs?.findTrackCount()
 
             val duration = secondSubtitle?.runs?.lastOrNull()?.let {
-                parseYoutubeDurationString(it.text, Locale.parse(hl))
+                parseYoutubeDurationString(it.text, Locale.parse(hl))?.inWholeMilliseconds
             }
             val isEditable = thumbnailEditButton?.buttonRenderer?.isDisabled == false
             val artist = facepile?.avatarStackViewModel?.let { model ->
