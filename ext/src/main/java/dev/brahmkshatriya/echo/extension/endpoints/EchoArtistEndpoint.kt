@@ -11,6 +11,7 @@ import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtistBuilder
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtistLayout
 import dev.toastbits.ytmkt.model.internal.HeaderRenderer
 import dev.toastbits.ytmkt.uistrings.parseYoutubeSubscribersString
+import sh.syk.kmpresources.library.model.Locale
 import io.ktor.client.call.body
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
@@ -19,7 +20,7 @@ import kotlinx.serialization.json.put
 class EchoArtistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
 
     suspend fun loadArtist(id: String): YtmArtist {
-        val hl: String = api.data_language
+        val hl: Locale = api.dataLocale
         val response: HttpResponse = api.client.request {
             endpointPath("browse")
             addApiHeadersWithAuthenticated()
@@ -34,7 +35,7 @@ class EchoArtistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
     private suspend fun parseArtistResponse(
         artistId: String,
         response: HttpResponse,
-        hl: String,
+        hl: Locale,
         api: YoutubeiApi
     ): Result<YtmArtist> = runCatching {
         val parsed: YoutubeiBrowseResponse = response.body()

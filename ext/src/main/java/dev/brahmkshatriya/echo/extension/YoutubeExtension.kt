@@ -524,11 +524,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     override suspend fun onShare(item: EchoMediaItem) = components.shareManager.getShareUrl(item)
     
     override suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?): Radio {
-        val mediaItem = when (item) {
-            is User -> ModelTypeHelper.userToArtist(item)
-            else -> item
-        }
-        return components.radioGenerator.generateRadio(mediaItem, context)
+        return components.radioGenerator.generateRadio(item, context)
     }
     
     override suspend fun loadRadio(radio: Radio): Radio = radio
