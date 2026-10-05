@@ -66,7 +66,7 @@ suspend fun MediaItemLayout.toShelf(
                 
                 val pagedData = PagedData.Single<EchoMediaItem> {
                     try {
-                        println("Loading view more page for browse_id: $id, visitor_id: ${api.visitor_id}")
+                        println("Loading view more page for browse_id: $id, visitor_id: ${api.visitorId}")
                         val rows =
                             api.GenericFeedViewMorePage.getGenericFeedViewMorePage(id).getOrThrow()
                         println("Got ${rows.size} items from view more page")
