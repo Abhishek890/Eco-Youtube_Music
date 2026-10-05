@@ -188,7 +188,7 @@ data class MusicTwoColumnItemRenderer(
                 ThumbnailProvider.fromThumbnails(it)
             },
             duration = subtitle?.runs?.find { it.isTime() }?.text?.let {
-                parseYoutubeDurationString(it, Locale.parse(hl))
+                parseYoutubeDurationString(it, Locale.parse(hl))?.inWholeMilliseconds
             },
             type = YtmSong.Type.SONG,
             is_explicit = menu?.menuRenderer?.title?.musicMenuTitleRenderer?.endButtons?.firstOrNull()?.likeButtonRenderer?.likeStatus == "LIKE"

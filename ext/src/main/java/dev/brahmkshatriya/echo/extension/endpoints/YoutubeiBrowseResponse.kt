@@ -133,9 +133,9 @@ data class YoutubeiBrowseResponse(
                 if (musicTwoRowItemRenderer != null) {
                     return musicTwoRowItemRenderer.toYtmMediaItem(api)?.let { Pair(it, null) }
                 } else if (musicResponsiveListItemRenderer != null) {
-                    return musicResponsiveListItemRenderer.toMediaItemAndPlaylistSetVideoId(hl)
+                    return musicResponsiveListItemRenderer.toMediaItemAndPlaylistSetVideoId(Locale.parse(hl))
                 } else if (musicMultiRowListItemRenderer != null) {
-                    return Pair(musicMultiRowListItemRenderer.toMediaItem(hl), null)
+                    return Pair(musicMultiRowListItemRenderer.toMediaItem(Locale.parse(hl)), null)
                 } else if (musicTwoColumnItemRenderer != null) {
                     return musicTwoColumnItemRenderer.toMediaItemData(hl)
                 } else if (continuationItemRenderer != null) return null
@@ -168,7 +168,7 @@ data class YoutubeiBrowseResponse(
                 ?: secondSubtitle?.runs?.findTrackCount()
 
             val duration = secondSubtitle?.runs?.lastOrNull()?.let {
-                parseYoutubeDurationString(it.text, hl)
+                parseYoutubeDurationString(it.text, Locale.parse(hl))
             }
             val isEditable = thumbnailEditButton?.buttonRenderer?.isDisabled == false
             val artist = facepile?.avatarStackViewModel?.let { model ->
