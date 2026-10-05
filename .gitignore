@@ -3,6 +3,8 @@
 .idea
 .DS_Store
 /build
+/ytm-kt-build/build/
+/kmpresources-build/build/
 /captures
 .externalNativeBuild
 .cxx

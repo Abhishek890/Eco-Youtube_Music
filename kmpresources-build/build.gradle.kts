@@ -18,44 +18,42 @@ kotlin {
         }
     }
     jvmToolchain(17)
+    compilerOptions {
+        freeCompilerArgs.add("-XXLanguage:+ExpectActualClasses")
+    }
 
     sourceSets {
         val commonMain by getting {
-            kotlin.srcDir("../ytm-kt-local/library/src/commonMain/kotlin")
+            kotlin.srcDir("../kmpresources-local/library/src/commonMain/kotlin")
             dependencies {
-                api(project(":kmpresources-local"))
-                implementation(libs.coroutines.core)
                 implementation(libs.serialization.json)
-                implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.content.negotiation)
-                implementation(libs.ktor.serialization.kotlinx.json)
             }
         }
 
-        val allJvmMain by creating {
+        val notComposeMain by creating {
             dependsOn(commonMain)
-            kotlin.srcDir("../ytm-kt-local/library/src/allJvmMain/kotlin")
-            dependencies {
-                implementation(libs.ktor.client.cio)
-                implementation(libs.newpipe)
-            }
+            kotlin.srcDir("../kmpresources-local/library/src/notComposeMain/kotlin")
+        }
+
+        val allJvmMain by creating {
+            dependsOn(notComposeMain)
+            kotlin.srcDir("../kmpresources-local/library/src/allJvmMain/kotlin")
         }
 
         val androidMain by getting {
             dependsOn(allJvmMain)
+            kotlin.srcDir("src/androidMain/kotlin")
         }
+
         val jvmMain by getting {
             dependsOn(allJvmMain)
+            kotlin.srcDir("src/jvmMain/kotlin")
         }
     }
 }
 
-kotlin.compilerOptions {
-    freeCompilerArgs.add("-XXLanguage:+ExpectActualClasses")
-}
-
 android {
-    namespace = "dev.toastbits.ytmkt"
+    namespace = "sh.syk.kmpresources.library"
     compileSdk = 35
 
     defaultConfig {
