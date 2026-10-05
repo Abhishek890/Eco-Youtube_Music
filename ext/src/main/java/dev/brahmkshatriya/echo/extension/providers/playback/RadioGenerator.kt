@@ -11,6 +11,7 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.ModelTypeHelper
+import dev.brahmkshatriya.echo.extension.endpoints.EchoSongEndPoint
 import dev.brahmkshatriya.echo.extension.toTrack
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
@@ -21,6 +22,7 @@ import dev.brahmkshatriya.echo.common.helpers.PagedData
 
 class RadioGenerator(
     private val api: YoutubeiApi,
+    private val songEndpoint: EchoSongEndPoint,
     private val json: Json,
     private val thumbnailQuality: ThumbnailProvider.Quality,
     private val trackCache: MutableMap<String, PagedData<Track>>
@@ -38,8 +40,8 @@ class RadioGenerator(
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
         val id = "radio_${track.id}"
         val cont = context?.extras?.get("cont")
-        val result = api.SongRadio.getSongRadio(track.id, cont).getOrThrow()
-        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong -> 
+        val result = songEndpoint.loadSongRadio(track.id, cont).getOrThrow()
+        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong ->
             song.toTrack(thumbnailQuality)
         }
         

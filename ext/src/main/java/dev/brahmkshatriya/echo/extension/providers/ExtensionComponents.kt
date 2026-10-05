@@ -91,7 +91,7 @@ class ExtensionComponents(
     }
 
     val radioGenerator by lazy {
-        RadioGenerator(api, json, thumbnailQuality, trackCache)
+        RadioGenerator(api, songEndpoint, json, thumbnailQuality, trackCache)
     }
 
     val playlistManager by lazy {
