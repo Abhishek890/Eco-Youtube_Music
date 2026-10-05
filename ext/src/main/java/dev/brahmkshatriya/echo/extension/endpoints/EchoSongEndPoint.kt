@@ -71,7 +71,7 @@ open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
 
         val artists: List<YtmArtist> = video.getArtists().getOrThrow() ?: emptyList()
         val album = video.getAlbum()
-        val duration = parseYoutubeDurationString(video.lengthText.first_text, api.data_language)
+        val duration = parseYoutubeDurationString(video.lengthText.first_text, api.dataLocale)?.inWholeMilliseconds
 
         val cover = ThumbnailProvider.fromThumbnails(video.thumbnail.thumbnails)
             ?.getThumbnailUrl(ThumbnailProvider.Quality.HIGH)?.toImageHolder()
