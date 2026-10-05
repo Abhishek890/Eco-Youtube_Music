@@ -505,16 +505,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         val pagedData = PagedData.Single {
             val lyricsId = track.extras["lyricsId"] ?: return@Single listOf()
             val data = lyricsEndPoint.getLyrics(lyricsId) ?: return@Single listOf()
-            val lyrics = data.first.map {
-                it.cueRange.run {
-                    Lyrics.Item(
-                        it.lyricLine,
-                        startTimeMilliseconds.toLong(),
-                        endTimeMilliseconds.toLong()
-                    )
-                }
-            }
-            listOf(Lyrics(lyricsId, track.title, data.second, Lyrics.Timed(lyrics)))
+            listOf(Lyrics(lyricsId, track.title, data.subtitle, data.lyrics))
         }
         return pagedData.toFeed()
     }
