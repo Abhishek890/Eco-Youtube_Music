@@ -56,6 +56,7 @@ import dev.brahmkshatriya.echo.extension.endpoints.GoogleAccountResponse
 import dev.brahmkshatriya.echo.extension.utils.CookieParser
 import dev.brahmkshatriya.echo.extension.providers.ExtensionComponents
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
+import sh.syk.kmpresources.library.model.Locale
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiAuthenticationState
 import dev.toastbits.ytmkt.model.external.PlaylistEditor
 import dev.toastbits.ytmkt.model.external.SongLikedStatus
@@ -119,9 +120,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         components = ExtensionComponents(api, settings, json)
     }
 
-    val api = YoutubeiApi(
-        data_language = ENGLISH
-    )
+    val api = YoutubeiApi(dataLocale = Locale.parse(ENGLISH))
 
     private val language = ENGLISH
     
@@ -267,12 +266,12 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 .getOrThrow()
 
         return result.layouts?.map {
-            val title = it.title?.getString(ENGLISH)
+            val title = it.title?.get(Locale.parse(ENGLISH))
             val single = title == SINGLES
             Shelf.Lists.Items(
-                id = it.title?.getString(language)?.hashCode()?.toString() ?: "Unknown",
-                title = it.title?.getString(language) ?: "Unknown",
-                subtitle = it.subtitle?.getString(language),
+                id = it.title?.get(Locale.parse(language))?.hashCode()?.toString() ?: "Unknown",
+                title = it.title?.get(Locale.parse(language)) ?: "Unknown",
+                subtitle = it.subtitle?.get(Locale.parse(language)),
                 list = it.items?.mapNotNull { item ->
                     item.toEchoMediaItem(single, thumbnailQuality)
                 } ?: emptyList(),
