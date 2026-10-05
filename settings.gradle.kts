@@ -20,3 +20,5 @@ dependencyResolutionManagement {
 rootProject.name = "Youtube Music Extension"
 include(":app")
 include(":ext")
+include(":ytm-kt-local")
+project(":ytm-kt-local").projectDir = file("ytm-kt-build")

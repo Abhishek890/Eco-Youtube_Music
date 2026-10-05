@@ -1,0 +1,3 @@
+[submodule "ytm-kt-local"]
+	path = ytm-kt-local
+	url = https://gitlab.com/syk.sh/ytm-kt.git

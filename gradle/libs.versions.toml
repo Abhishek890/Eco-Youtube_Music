@@ -1,20 +1,26 @@
 [versions]
 echoCommon = "1.0"
-kotlin = "2.2.10"
+kotlin = "2.4.0"
 agp = "8.12.1"
 gradleShadow = "9.0.2"
-ktor = "3.0.0-beta-2"
-ytmkt = "0.6.1"
-newpipe = "v0.26.3"
+ktor = "3.5.0"
+newpipe = "v0.26.5"
 desugarJdkLibs = "2.0.4"
+coroutines = "1.11.0"
+serializationJson = "1.10.0"
+kmpresources = "1.0.3"
+composekit = "1.2.6"
 
 [libraries]
 echo-common = { module = "dev.brahmkshatriya.echo:common", version.ref = "echoCommon" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 junit = { module = "junit:junit", version = "4.13.2" }
-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version = "1.10.2" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializationJson" }
+kmpresources = { module = "sh.syk:kmpresources-library", version.ref = "kmpresources" }
+composekit-kutil = { module = "sh.syk:composekit-kutil", version.ref = "composekit" }
 
-ytmkt = { module = "dev.toastbits:ytm-kt", version.ref = "ytmkt" }
 newpipe = { module = "com.github.teamnewpipe:NewPipeExtractor", version.ref = "newpipe" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
@@ -24,7 +30,9 @@ desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs_nio", version.
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 gradle-shadow = { id = "com.gradleup.shadow", version.ref = "gradleShadow" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
