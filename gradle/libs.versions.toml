@@ -4,7 +4,7 @@ kotlin = "2.2.10"
 agp = "8.12.1"
 gradleShadow = "9.0.2"
 ktor = "3.0.0-beta-2"
-ytmkt = "0.4.3"  
+ytmkt = "0.6.1"
 newpipe = "v0.26.3"
 desugarJdkLibs = "2.0.4"
 
