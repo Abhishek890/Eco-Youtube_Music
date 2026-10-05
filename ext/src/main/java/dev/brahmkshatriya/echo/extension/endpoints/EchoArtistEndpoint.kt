@@ -58,7 +58,7 @@ class EchoArtistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
             }
             headerRenderer.playButton?.buttonRenderer?.let {
                 if (it.icon?.iconType == "MUSIC_SHUFFLE") {
-                    builder.shuffle_playlist_id = it.navigationEndpoint.watchEndpoint?.playlistId
+                    builder.shuffle_playlist_id = it.navigationEndpoint?.watchEndpoint?.playlistId
                 }
             }
         }
