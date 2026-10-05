@@ -106,7 +106,7 @@ class EchoSearchEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
             val shelf: YTMGetSongFeedEndpoint.MusicShelfRenderer =
                 category.musicShelfRenderer ?: continue
             val items =
-                shelf.contents?.mapNotNull { it.toMediaItemData(hl, api)?.first }?.toMutableList()
+                shelf.contents?.mapNotNull { it.toMediaItemAndPlaylistSetVideoId(api.dataLocale, api)?.first }?.toMutableList()
                     ?: continue
             val searchParams =
                 if (index == 0) null else chips.getOrNull(index - 1)?.chipCloudChipRenderer?.navigationEndpoint?.searchEndpoint?.params
