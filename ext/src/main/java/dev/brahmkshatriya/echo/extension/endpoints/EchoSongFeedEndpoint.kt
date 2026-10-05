@@ -55,7 +55,7 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
         }
 
         var data: YoutubeiBrowseResponse = performRequest(continuation)
-        val headerChips: List<SongFeedFilterChip>? = data.getHeaderChips(hl)
+        val headerChips: List<SongFeedFilterChip>? = data.getHeaderChips(api.dataLocale)
 
         val rows: MutableList<MediaItemLayout> = processRows(
             data.getShelves(continuation != null), api

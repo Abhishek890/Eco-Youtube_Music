@@ -17,6 +17,7 @@ import dev.toastbits.ytmkt.radio.YoutubeiNextResponse
 import dev.toastbits.ytmkt.uistrings.YoutubeUiString
 import dev.toastbits.ytmkt.uistrings.parseYoutubeDurationString
 import kotlinx.serialization.Serializable
+import sh.syk.kmpresources.library.model.Locale
 
 @Serializable
 data class YoutubeiBrowseResponse(
@@ -36,7 +37,7 @@ data class YoutubeiBrowseResponse(
             ?: contents?.sectionListRenderer?.contents ?: emptyList()
     }
 
-    fun getHeaderChips(dataLanguage: String): List<SongFeedFilterChip>? =
+    fun getHeaderChips(dataLanguage: Locale): List<SongFeedFilterChip>? =
         contents?.singleColumnBrowseResultsRenderer?.tabs?.first()?.tabRenderer?.content?.sectionListRenderer?.header?.chipCloudRenderer?.chips?.map {
             SongFeedFilterChip(
                 YoutubeUiString.Type.FILTER_CHIP.createFromKey(
