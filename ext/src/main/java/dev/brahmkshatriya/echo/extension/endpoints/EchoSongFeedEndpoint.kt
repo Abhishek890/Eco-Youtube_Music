@@ -40,8 +40,8 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
                     url.parameters.append("type", "next")
                 }
 
-                addApiHeadersWithAuthenticated()
                 addApiHeadersWithoutAuthentication(PLAIN_HEADERS)
+                addApiHeadersWithAuthenticated()
                 postWithBody {
                     if (params != null) {
                         put("params", params)
