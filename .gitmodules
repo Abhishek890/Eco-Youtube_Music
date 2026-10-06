@@ -1,0 +1,6 @@
+[submodule "ytm-kt-local"]
+	path = ytm-kt-local
+	url = https://gitlab.com/syk.sh/ytm-kt.git
+[submodule "kmpresources-local"]
+	path = kmpresources-local
+	url = https://gitlab.com/syk.sh/kmpresources.git

@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.extension.toShelf
 import dev.toastbits.ytmkt.endpoint.SearchType
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
+import sh.syk.kmpresources.library.model.Locale
 
 
 class SearchFeedProvider(
@@ -57,11 +58,11 @@ class SearchFeedProvider(
         val filterChips = result.filter_chips?.map {
             Tab(
                 id = it.params,
-                title = it.text.getString(YoutubeExtension.ENGLISH),
+                title = it.text.get(Locale.parse(YoutubeExtension.ENGLISH)),
                 isSort = false,
                 extras = mapOf(
                     "browseId" to it.params,
-                    "category" to it.text.getString(YoutubeExtension.ENGLISH),
+                    "category" to it.text.get(Locale.parse(YoutubeExtension.ENGLISH)),
                     "isFilterChip" to "true",
                     "isHomeFeedTab" to "true"
                 )

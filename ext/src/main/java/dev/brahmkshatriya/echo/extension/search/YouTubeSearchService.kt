@@ -13,6 +13,7 @@ import dev.toastbits.ytmkt.endpoint.SearchResults
 import dev.toastbits.ytmkt.endpoint.SearchType
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
+import sh.syk.kmpresources.library.model.Locale
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtist
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmPlaylist
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmSong
@@ -73,7 +74,7 @@ class YouTubeSearchService(
         val shelves = mutableListOf<Shelf>()
         
         for ((layout, _) in searchResults.categories) {
-            val title = layout.title?.getString("en") ?: "Results"
+            val title = layout.title?.get(Locale.parse("en")) ?: "Results"
             val items = layout.items
             
             if (items.isEmpty()) continue

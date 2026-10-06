@@ -28,7 +28,7 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
         continuation: String? = null,
         browseId: String? = null
     ) = runCatching {
-        val hl: String = api.data_language
+        val hl: String = api.dataLocale.toTag()
 
         suspend fun performRequest(ctoken: String?): YoutubeiBrowseResponse {
             val response: HttpResponse = api.client.request {
@@ -40,8 +40,8 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
                     url.parameters.append("type", "next")
                 }
 
-                addApiHeadersWithAuthenticated()
                 addApiHeadersWithoutAuthentication(PLAIN_HEADERS)
+                addApiHeadersWithAuthenticated()
                 postWithBody {
                     if (params != null) {
                         put("params", params)
@@ -55,7 +55,7 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
         }
 
         var data: YoutubeiBrowseResponse = performRequest(continuation)
-        val headerChips: List<SongFeedFilterChip>? = data.getHeaderChips(hl)
+        val headerChips: List<SongFeedFilterChip>? = data.getHeaderChips(api.dataLocale)
 
         val rows: MutableList<MediaItemLayout> = processRows(
             data.getShelves(continuation != null), api
@@ -90,9 +90,9 @@ open class EchoSongFeedEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
         fun processRows(
             rows: List<YoutubeiBrowseResponse.YoutubeiShelf>, api: YoutubeiApi
         ): List<MediaItemLayout> {
-            val hl = api.data_language
+            val hl = api.dataLocale.toTag()
             fun String.createUiString() =
-                YoutubeUiString.Type.HOME_FEED.createFromKey(this, api.data_language)
+                YoutubeUiString.Type.HOME_FEED.createFromKey(this, api.dataLocale)
 
             return rows.mapNotNull { row ->
                 val items = row.getMediaItems(hl, api) ?: return@mapNotNull null

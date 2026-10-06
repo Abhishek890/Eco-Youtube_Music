@@ -26,9 +26,9 @@ dependencies {
     compileOnly(libs.echo.common)
     compileOnly(libs.kotlin.stdlib)
 
-    api(libs.ytmkt) { 
+    api(project(":ytm-kt-local")) {
         excludeKotlin()
-    }  
+    }
     implementation(libs.newpipe) { excludeKotlin() }
     implementation(libs.ktor.client.core) { excludeKotlin() }
     implementation(libs.ktor.client.cio) { excludeKotlin() }

@@ -13,10 +13,14 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
-        maven { url = uri("https://maven.toastbits.dev") }  
+        maven { url = uri("https://maven.syk.sh") }
     }
 }
 
 rootProject.name = "Youtube Music Extension"
 include(":app")
 include(":ext")
+include(":ytm-kt-local")
+project(":ytm-kt-local").projectDir = file("ytm-kt-build")
+include(":kmpresources-local")
+project(":kmpresources-local").projectDir = file("kmpresources-build")

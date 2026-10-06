@@ -26,6 +26,7 @@ import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtist
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmMediaItem
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmPlaylist
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmSong
+import sh.syk.kmpresources.library.model.Locale
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
@@ -43,12 +44,12 @@ suspend fun MediaItemLayout.toShelf(
     language: String,
     quality: ThumbnailProvider.Quality
 ): Shelf {
-    val single = title?.getString(ENGLISH) == SINGLES
+    val single = title?.get(Locale.parse(ENGLISH)) == SINGLES
     return try {
         Shelf.Lists.Items(
-            id = title?.getString(language)?.hashCode()?.toString() ?: "Unknown",
-            title = title?.getString(language) ?: "Unknown",
-            subtitle = subtitle?.getString(language),
+            id = title?.get(Locale.parse(language))?.hashCode()?.toString() ?: "Unknown",
+            title = title?.get(Locale.parse(language)) ?: "Unknown",
+            subtitle = subtitle?.get(Locale.parse(language)),
             list = items.mapNotNull { item ->
                 try {
                     item.toEchoMediaItem(single, quality)
@@ -57,7 +58,7 @@ suspend fun MediaItemLayout.toShelf(
                     null
                 }
             },
-            more = view_more?.getBrowseParamsData()?.browse_id?.let { id ->
+            more = view_more?.getBrowseParamsData()?.browseId?.let { id ->
                 if (id.startsWith("FEmusic_")) {
                     println("Skipping view more for special browse_id: $id")
                     return@let null
@@ -65,7 +66,7 @@ suspend fun MediaItemLayout.toShelf(
                 
                 val pagedData = PagedData.Single<EchoMediaItem> {
                     try {
-                        println("Loading view more page for browse_id: $id, visitor_id: ${api.visitor_id}")
+                        println("Loading view more page for browse_id: $id, visitor_id: ${api.visitorId}")
                         val rows =
                             api.GenericFeedViewMorePage.getGenericFeedViewMorePage(id).getOrThrow()
                         println("Got ${rows.size} items from view more page")

@@ -8,11 +8,13 @@ import dev.brahmkshatriya.echo.extension.toAlbum
 import dev.brahmkshatriya.echo.extension.toArtist
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.ApiEndpoint
+import dev.toastbits.ytmkt.endpoint.SongRadioEndpoint
 import dev.toastbits.ytmkt.model.external.Thumbnail
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmArtist
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmMediaItem
 import dev.toastbits.ytmkt.model.external.mediaitem.YtmPlaylist
+import dev.toastbits.ytmkt.model.external.mediaitem.YtmSong
 import dev.toastbits.ytmkt.model.internal.BrowseEndpoint
 import dev.toastbits.ytmkt.model.internal.MusicResponsiveListItemRenderer
 import dev.toastbits.ytmkt.model.internal.MusicThumbnailRenderer
@@ -21,11 +23,13 @@ import dev.toastbits.ytmkt.model.internal.TextRun
 import dev.toastbits.ytmkt.model.internal.TextRuns
 import dev.toastbits.ytmkt.model.internal.WatchEndpoint
 import dev.toastbits.ytmkt.uistrings.parseYoutubeDurationString
+import dev.toastbits.ytmkt.radio.YoutubeiNextResponse as YtmNextResponse
 import io.ktor.client.call.body
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
     suspend fun loadSong(
@@ -42,6 +46,67 @@ open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
         }
         return@runCatching parseSongResponse(song_id, nextResponse, api).getOrThrow()
     }
+
+    suspend fun loadSongRadio(
+        songId: String,
+        continuation: String?
+    ): Result<SongRadioEndpoint.RadioData> = runCatching {
+        val response = api.client.request {
+            endpointPath("next")
+            addApiHeadersWithAuthenticated()
+            postWithBody {
+                put("enablePersistentPlaylistPanel", true)
+                put("tunerSettingValue", "AUTOMIX_SETTING_NORMAL")
+                put("playlistId", "RDAMVM$songId")
+                put("isAudioOnly", true)
+                putJsonObject("watchEndpointMusicSupportedConfigs") {
+                    putJsonObject("watchEndpointMusicConfig") {
+                        put("hasPersistentPlaylistPanel", true)
+                        put("musicVideoType", "MUSIC_VIDEO_TYPE_ATV")
+                    }
+                }
+                continuation?.let { put("continuation", it) }
+            }
+        }
+
+        val panel = if (continuation == null) {
+            val data: YoutubeiNextResponse = response.body()
+            data.contents.singleColumnMusicWatchNextResultsRenderer.tabbedRenderer
+                .watchNextTabbedResultsRenderer.tabs.firstOrNull()?.tabRenderer?.content
+                ?.musicQueueRenderer?.content?.playlistPanelRenderer
+        } else {
+            response.body<YoutubeiNextResponse.ContinuationResponse>()
+                .continuationContents.playlistPanelContinuation
+        }
+
+        SongRadioEndpoint.RadioData(
+            items = panel?.contents.orEmpty().map { it.getRenderer().toSongRadioItem(api) },
+            continuation = panel?.continuations?.firstOrNull()?.data?.continuation,
+            filters = null
+        )
+    }
+
+    private suspend fun YoutubeiNextResponse.PlaylistPanelVideoRenderer.toSongRadioItem(
+        api: YoutubeiApi
+    ): YtmSong = YtmSong(
+        id = YtmSong.cleanId(videoId),
+        name = title.first_text,
+        thumbnail_provider = ThumbnailProvider.fromThumbnails(thumbnail.thumbnails),
+        artists = getArtists().getOrThrow(),
+        album = getAlbum(),
+        duration = parseYoutubeDurationString(lengthText.first_text, api.dataLocale)?.inWholeMilliseconds,
+        is_explicit = badges?.any { it.isExplicit() } == true
+    )
+
+    private suspend fun YtmNextResponse.PlaylistPanelVideoRenderer.toSongRadioItem(
+        api: YoutubeiApi
+    ): YtmSong = YtmSong(
+        id = YtmSong.cleanId(videoId),
+        name = title.first_text,
+        artists = getArtists(api).getOrThrow(),
+        album = getAlbum().getOrThrow(),
+        duration = getDuration(api.dataLocale)?.inWholeMilliseconds
+    )
 
     private suspend fun parseSongResponse(
         songId: String,
@@ -63,7 +128,7 @@ open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
             tabs.getOrNull(2)?.tabRenderer?.endpoint?.browseEndpoint?.browseId
 
         val video: YoutubeiNextResponse.PlaylistPanelVideoRenderer =
-            tabs[0].tabRenderer.content!!.musicQueueRenderer.content!!.playlistPanelRenderer.contents.first().playlistPanelVideoRenderer!!
+            tabs[0].tabRenderer.content!!.musicQueueRenderer!!.content!!.playlistPanelRenderer.contents.first().playlistPanelVideoRenderer!!
 
         val title: String = video.title.first_text
         val isLiked =
@@ -71,7 +136,7 @@ open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
 
         val artists: List<YtmArtist> = video.getArtists().getOrThrow() ?: emptyList()
         val album = video.getAlbum()
-        val duration = parseYoutubeDurationString(video.lengthText.first_text, api.data_language)
+        val duration = parseYoutubeDurationString(video.lengthText.first_text, api.dataLocale)?.inWholeMilliseconds
 
         val cover = ThumbnailProvider.fromThumbnails(video.thumbnail.thumbnails)
             ?.getThumbnailUrl(ThumbnailProvider.Quality.HIGH)?.toImageHolder()
@@ -216,7 +281,7 @@ data class YoutubeiNextResponse(
     class TabRendererEndpoint(val browseEndpoint: BrowseEndpoint)
 
     @Serializable
-    class Content(val musicQueueRenderer: MusicQueueRenderer)
+    class Content(val musicQueueRenderer: MusicQueueRenderer? = null)
 
     @Serializable
     class MusicQueueRenderer(
@@ -252,14 +317,17 @@ data class YoutubeiNextResponse(
     class MusicQueueRendererContent(val playlistPanelRenderer: PlaylistPanelRenderer)
 
     @Serializable
-    class PlaylistPanelRenderer(val contents: List<ResponseRadioItem>)
+    class PlaylistPanelRenderer(
+        val contents: List<ResponseRadioItem>,
+        val continuations: List<Continuation>? = null
+    )
 
     @Serializable
     data class ResponseRadioItem(
         val playlistPanelVideoRenderer: PlaylistPanelVideoRenderer?,
         val playlistPanelVideoWrapperRenderer: PlaylistPanelVideoWrapperRenderer?
     ) {
-        private fun getRenderer(): PlaylistPanelVideoRenderer {
+        fun getRenderer(): PlaylistPanelVideoRenderer {
             if (playlistPanelVideoRenderer != null) {
                 return playlistPanelVideoRenderer
             }
@@ -347,6 +415,20 @@ data class YoutubeiNextResponse(
             return null
         }
     }
+
+    @Serializable
+    data class Continuation(val nextContinuationData: ContinuationData?, val nextRadioContinuationData: ContinuationData?) {
+        val data: ContinuationData? get() = nextContinuationData ?: nextRadioContinuationData
+    }
+
+    @Serializable
+    data class ContinuationData(val continuation: String)
+
+    @Serializable
+    data class ContinuationResponse(val continuationContents: ContinuationContents)
+
+    @Serializable
+    data class ContinuationContents(val playlistPanelContinuation: PlaylistPanelRenderer)
 
     @Serializable
     data class Menu(val menuRenderer: MenuRenderer)
