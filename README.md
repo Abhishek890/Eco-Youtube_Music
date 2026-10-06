@@ -7,7 +7,7 @@ This extension powers YouTube Music support inside Echo using a combination of:
 - **[NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor)** for audio & Video loading and playback
 
 You can use, study, share, and improve this project freely.  
-Rewritten / improved by **[@isAbhishekkumar](https://github.com/isAbhishekkumar)** — consider leaving a ⭐!  
+Rewritten / improved by **[@abhishekkchoudharyy](https://github.com/abhishekkchoudharyy)** — consider leaving a ⭐!  
 Special thanks to **[@brahmkshatriya](https://github.com/brahmkshatriya)** for the original YTMusic work.
 
 ---
