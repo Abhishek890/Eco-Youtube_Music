@@ -17,6 +17,12 @@ kotlin {
     jvmToolchain(17)
 }
 
+sourceSets {
+    named("test") {
+        java.exclude("**/ExtensionUnitTest.kt")
+    }
+}
+
 fun <T : ModuleDependency> T.excludeKotlin() {
     exclude("org.jetbrains.kotlin", "kotlin-stdlib")
     exclude("org.jetbrains.kotlinx", "kotlinx-coroutines-core")
@@ -101,13 +107,13 @@ tasks {
         }
     }
     
-    // Enable test tasks now that we have proper implementations
     test {
-        enabled = false
+        enabled = true
+        exclude("**/ExtensionUnitTest.class")
     }
     
     compileTestKotlin {
-        enabled = false
+        enabled = true
     }
 }
 
