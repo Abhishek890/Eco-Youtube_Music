@@ -6,6 +6,7 @@ import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.toAlbum
 import dev.brahmkshatriya.echo.extension.toArtist
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.ApiEndpoint
 import dev.toastbits.ytmkt.endpoint.SongRadioEndpoint
@@ -31,7 +32,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
+open class EchoSongEndPoint(
+    override val api: YoutubeiApi,
+    private val artistNameResolver: ArtistNameResolver
+) : ApiEndpoint() {
     suspend fun loadSong(
         @Suppress("LocalVariableName") song_id: String
     ): Result<Track> = runCatching {
@@ -144,8 +148,9 @@ open class EchoSongEndPoint(override val api: YoutubeiApi) : ApiEndpoint() {
             id = songId,
             title = title,
             cover = cover,
-            artists = artists.map { it.toArtist(ThumbnailProvider.Quality.HIGH) },
-            album = album?.toAlbum(false, ThumbnailProvider.Quality.HIGH),
+            artists = artistNameResolver.resolve(artists, lookupMissing = false)
+                .map { it.toArtist(ThumbnailProvider.Quality.HIGH) },
+            album = album?.toAlbum(false, ThumbnailProvider.Quality.HIGH, artistNameResolver),
             duration = duration,
             extras = mutableMapOf<String, String>().apply {
                 relatedBrowseId?.let { put("relatedId", it) }

@@ -153,7 +153,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                     params = tab?.id, continuation = continuation
                 ).getOrThrow()
                 val data = result.layouts.map { itemLayout ->
-                    itemLayout.toShelf(api, SINGLES, thumbnailQuality)
+                    itemLayout.toShelf(api, SINGLES, thumbnailQuality, components.artistNameResolver)
                 }
                 Page(data, result.ctoken)
             }
@@ -175,7 +175,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         return if (relatedId != null) {
             try {
                 songFeedEndPoint.getSongFeed(browseId = relatedId).getOrThrow().layouts.map {
-                    it.toShelf(api, SINGLES, thumbnailQuality)
+                    it.toShelf(api, SINGLES, thumbnailQuality, components.artistNameResolver)
                 }
             } catch (e: Exception) {
                 emptyList()
@@ -255,7 +255,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             album.id, null, thumbnailQuality
         )
         trackMap[ytmPlaylist.id] = data
-        return ytmPlaylist.toAlbum(false, HIGH)
+        return ytmPlaylist.toAlbum(false, HIGH, components.artistNameResolver)
     }
 
     override suspend fun loadTracks(album: Album): Feed<Track>? = trackMap[album.id]?.toFeed()
@@ -273,14 +273,14 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 title = it.title?.get(Locale.parse(language)) ?: "Unknown",
                 subtitle = it.subtitle?.get(Locale.parse(language)),
                 list = it.items?.mapNotNull { item ->
-                    item.toEchoMediaItem(single, thumbnailQuality)
+                    item.toEchoMediaItem(single, thumbnailQuality, components.artistNameResolver)
                 } ?: emptyList(),
                 more = it.view_more?.getBrowseParamsData()?.let { param ->
                     PagedData.Single {
                         val data = artistMoreEndpoint.load(param)
                         data.map { row ->
                             row.items.mapNotNull { item ->
-                                item.toEchoMediaItem(single, thumbnailQuality)
+                                item.toEchoMediaItem(single, thumbnailQuality, components.artistNameResolver)
                             }
                         }.flatten()
                     }.let { mediaItems ->
@@ -301,7 +301,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
     override suspend fun loadArtist(artist: Artist): Artist {
         val result = artistEndPoint.loadArtist(artist.id)
         loadedArtist = result
-        return result.toArtist(HIGH)
+        return components.artistNameResolver.resolve(listOf(result)).single().toArtist(HIGH)
     }
 
     override suspend fun loadFeed(playlist: Playlist): Feed<Shelf>? {
@@ -321,7 +321,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 }
             } else {
                 songRelatedEndpoint.loadFromPlaylist(cont).getOrNull()?.map { 
-                    it.toShelf(api, language, thumbnailQuality) 
+                    it.toShelf(api, language, thumbnailQuality, components.artistNameResolver)
                 } ?: emptyList()
             }
         } catch (e: Exception) {
@@ -343,7 +343,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             thumbnailQuality
         )
         trackMap[ytmPlaylist.id] = data
-        return ytmPlaylist.toPlaylist(HIGH, related)
+        return ytmPlaylist.toPlaylist(HIGH, components.artistNameResolver, related)
     }
 
     override suspend fun loadTracks(playlist: Playlist): Feed<Track> = trackMap[playlist.id]?.toFeed() ?: listOf<Track>().toFeed()

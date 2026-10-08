@@ -1,8 +1,11 @@
 package dev.brahmkshatriya.echo.extension.endpoints
 
 import dev.brahmkshatriya.echo.common.models.Streamable
+import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.toTrack
+import dev.brahmkshatriya.echo.extension.usableArtistName
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 
@@ -12,7 +15,8 @@ import dev.toastbits.ytmkt.model.external.ThumbnailProvider
  */
 class EchoEnhancedSongEndpoint(
     private val api: YoutubeiApi,
-    private val echoSongEndpoint: EchoSongEndPoint
+    private val echoSongEndpoint: EchoSongEndPoint,
+    private val artistNameResolver: ArtistNameResolver
 ) {
     /**
      * Load track data by combining ytm-kt LoadSong and custom EchoSongEndpoint.
@@ -31,9 +35,14 @@ class EchoEnhancedSongEndpoint(
         println("EchoEnhancedSongEndpoint: Loading track $trackId, fallback isVideo=${fallbackTrack.extras["isVideo"]}")
         
         // Try ytm-kt first (faster, better quality data)
+        val nameHints = ArtistNameResolver.namesFrom(fallbackTrack.artists)
         val ytmTrack = runCatching {
-            api.LoadSong.loadSong(trackId).getOrThrow()
-        }.map { it.toTrack(thumbnailQuality) }.getOrNull()
+            api.LoadSong.loadSong(trackId).getOrThrow().toTrack(
+                thumbnailQuality,
+                artistNameResolver,
+                knownArtistNames = nameHints
+            )
+        }.getOrNull()
         
         if (ytmTrack != null) {
             // Check if we need legacy data for missing extras (lyricsId, relatedId, isLiked)
@@ -126,11 +135,7 @@ class EchoEnhancedSongEndpoint(
             // Prefer ytm album, fallback to legacy
             album = ytmTrack.album ?: legacyTrack?.album,
             
-            // Prefer ytm artists if non-empty, fallback to legacy then original
-            artists = if (ytmTrack.artists.isNotEmpty()) 
-                ytmTrack.artists 
-            else 
-                legacyTrack?.artists ?: fallbackTrack.artists,
+            artists = mergeArtistsById(ytmTrack.artists, legacyTrack?.artists, fallbackTrack.artists),
             
             // Add streamables - THIS WAS MISSING!
             streamables = streamables,
@@ -150,6 +155,7 @@ class EchoEnhancedSongEndpoint(
         mergedExtras: Map<String, String>
     ): Track {
         return legacyTrack.copy(
+            artists = mergeArtistsById(legacyTrack.artists, fallbackTrack.artists),
             extras = mergedExtras,
             streamables = legacyTrack.streamables.takeIf { it.isNotEmpty() } 
                 ?: createDefaultStreamable(mergedExtras["videoId"]!!)
@@ -184,5 +190,33 @@ class EchoEnhancedSongEndpoint(
                 extras = mapOf("videoId" to videoId)
             )
         )
+    }
+
+    companion object {
+        internal fun mergeArtistsById(
+            primary: List<Artist>,
+            vararg fallbacks: List<Artist>?
+        ): List<Artist> {
+            val candidates = listOfNotNull(primary.takeIf { it.isNotEmpty() }) +
+                fallbacks.filterNotNull().filter { it.isNotEmpty() }
+            if (candidates.isEmpty()) return emptyList()
+
+            // During playback, the original feed/search item is the user's known credit.
+            // Prefer the latest named candidate so a later uploader ID cannot replace it.
+            val selected = candidates.lastOrNull { candidate ->
+                candidate.any { it.name.usableArtistName() != null }
+            } ?: candidates.first()
+            val namedById = buildMap {
+                candidates.asReversed().flatten().forEach { artist ->
+                    if (artist.id.isNotBlank()) {
+                        artist.name.usableArtistName()?.let { putIfAbsent(artist.id, it) }
+                    }
+                }
+            }
+            return selected.map { artist ->
+                if (artist.name.usableArtistName() != null) artist
+                    else namedById[artist.id]?.let { artist.copy(name = it) } ?: artist
+            }
+        }
     }
 }

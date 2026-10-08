@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.extension.endpoints
 import dev.brahmkshatriya.echo.common.helpers.Page
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.YoutubeExtension.Companion.SONGS
 import dev.brahmkshatriya.echo.extension.toTrack
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
@@ -22,7 +23,10 @@ import io.ktor.client.statement.HttpResponse
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.put
 
-class EchoPlaylistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
+class EchoPlaylistEndpoint(
+    override val api: YoutubeiApi,
+    private val artistNameResolver: ArtistNameResolver
+) : ApiEndpoint() {
 
     private val continuationEndpoint = EchoPlaylistContinuationEndpoint(api)
 
@@ -74,14 +78,18 @@ class EchoPlaylistEndpoint(override val api: YoutubeiApi) : ApiEndpoint() {
                 val ytmSongs = playlist.items ?: emptyList()
                 val sets = playlist.item_set_ids!!
                 Page(
-                    ytmSongs.mapIndexed { index, it -> it.toTrack(quality, sets[index]) },
+                    ytmSongs.mapIndexed { index, it ->
+                        it.toTrack(quality, artistNameResolver, sets[index], knownArtists = playlist.artists.orEmpty())
+                    },
                     playlist.continuation?.token
                 )
             } else {
                 val (songs, setIds, cont) = continuationEndpoint.load(token)
                 val ytmSongs = songs ?: emptyList()
                 val sets = setIds ?: emptyList()
-                Page(ytmSongs.mapIndexed { index, it -> it.toTrack(quality, sets[index]) }, cont)
+                Page(ytmSongs.mapIndexed { index, it ->
+                    it.toTrack(quality, artistNameResolver, sets[index], knownArtists = playlist.artists.orEmpty())
+                }, cont)
             }
         }
         Triple(playlist, relation, songs)

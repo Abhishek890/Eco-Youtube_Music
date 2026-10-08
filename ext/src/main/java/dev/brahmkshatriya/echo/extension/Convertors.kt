@@ -42,7 +42,8 @@ fun String.containsTimestamp(): Boolean {
 suspend fun MediaItemLayout.toShelf(
     api: YoutubeiApi,
     language: String,
-    quality: ThumbnailProvider.Quality
+    quality: ThumbnailProvider.Quality,
+    artistNameResolver: ArtistNameResolver
 ): Shelf {
     val single = title?.get(Locale.parse(ENGLISH)) == SINGLES
     return try {
@@ -52,7 +53,7 @@ suspend fun MediaItemLayout.toShelf(
             subtitle = subtitle?.get(Locale.parse(language)),
             list = items.mapNotNull { item ->
                 try {
-                    item.toEchoMediaItem(single, quality)
+                    item.toEchoMediaItem(single, quality, artistNameResolver)
                 } catch (e: Exception) {
                     println("Failed to convert media item in shelf: ${e.message}")
                     null
@@ -72,7 +73,7 @@ suspend fun MediaItemLayout.toShelf(
                         println("Got ${rows.size} items from view more page")
                         rows.mapNotNull { ytmItem ->
                             try {
-                                ytmItem.toEchoMediaItem(single, quality)
+                                ytmItem.toEchoMediaItem(single, quality, artistNameResolver)
                             } catch (e: Exception) {
                                 println("Failed to convert media item in generic feed: ${e.message}")
                                 e.printStackTrace()
@@ -117,21 +118,22 @@ suspend fun MediaItemLayout.toShelf(
     }
 }
 
-fun YtmMediaItem.toEchoMediaItem(
+suspend fun YtmMediaItem.toEchoMediaItem(
     single: Boolean,
-    quality: ThumbnailProvider.Quality
+    quality: ThumbnailProvider.Quality,
+    artistNameResolver: ArtistNameResolver
 ): EchoMediaItem? {
     return try {
         when (this) {
-            is YtmSong -> toTrack(quality)
+            is YtmSong -> toTrack(quality, artistNameResolver)
             is YtmPlaylist -> when (type) {
-                YtmPlaylist.Type.ALBUM -> toAlbum(single, quality)
+                YtmPlaylist.Type.ALBUM -> toAlbum(single, quality, artistNameResolver)
                 else -> {
-                    if (id != "VLSE") toPlaylist(quality)
+                    if (id != "VLSE") toPlaylist(quality, artistNameResolver)
                     else null
                 }
             }
-            is YtmArtist -> toArtist(quality)
+            is YtmArtist -> artistNameResolver.resolve(listOf(this)).single().toArtist(quality)
             else -> null
         }
     } catch (e: Exception) {
@@ -140,8 +142,10 @@ fun YtmMediaItem.toEchoMediaItem(
     }
 }
 
-fun YtmPlaylist.toPlaylist(
-    quality: ThumbnailProvider.Quality, related: String? = null
+suspend fun YtmPlaylist.toPlaylist(
+    quality: ThumbnailProvider.Quality,
+    artistNameResolver: ArtistNameResolver,
+    related: String? = null
 ): Playlist {
     return try {
         val extras = mutableMapOf<String, String>()
@@ -154,7 +158,8 @@ fun YtmPlaylist.toPlaylist(
             title = name ?: "Unknown",
             isEditable = bool.getOrNull(1) ?: false,
             cover = thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(mapOf()),
-            authors = artists?.map { it.toUser(quality) }?.let { ModelTypeHelper.safeArtistListConversion(it) } ?: emptyList(),
+            authors = artistNameResolver.resolve(artists).map { it.toUser(quality) }
+                .let { ModelTypeHelper.safeArtistListConversion(it) },
             trackCount = item_count?.toLong(),
             duration = total_duration?.toLong(),
             creationDate = year?.let { yearStr -> 
@@ -180,9 +185,10 @@ fun YtmPlaylist.toPlaylist(
     }
 }
 
-fun YtmPlaylist.toAlbum(
+suspend fun YtmPlaylist.toAlbum(
     single: Boolean = false,
-    quality: ThumbnailProvider.Quality
+    quality: ThumbnailProvider.Quality,
+    artistNameResolver: ArtistNameResolver
 ): Album {
     return try {
         val bool = owner_id?.split(",")?.map {
@@ -193,7 +199,7 @@ fun YtmPlaylist.toAlbum(
             title = name ?: "Unknown",
             isExplicit = bool.firstOrNull() ?: false,
             cover = thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(mapOf()),
-            artists = artists?.map { it.toArtist(quality) } ?: emptyList(),
+            artists = artistNameResolver.resolve(artists).map { it.toArtist(quality) },
             trackCount = item_count?.toLong() ?: if (single) 1L else null,
             releaseDate = year?.let { yearStr -> 
                 parseYearString(yearStr)
@@ -219,12 +225,21 @@ fun YtmPlaylist.toAlbum(
     }
 }
 
-fun YtmSong.toTrack(
+suspend fun YtmSong.toTrack(
     quality: ThumbnailProvider.Quality,
-    setId: String? = null
+    artistNameResolver: ArtistNameResolver,
+    setId: String? = null,
+    knownArtists: List<YtmArtist> = emptyList(),
+    knownArtistNames: Map<String, String> = emptyMap()
 ): Track {
     return try {
-        val album = album?.toAlbum(false, quality)
+        val album = album?.toAlbum(false, quality, artistNameResolver)
+        val resolvedArtists = artistNameResolver.resolve(
+            artists,
+            knownArtists = this.album?.artists.orEmpty() + knownArtists,
+            knownNames = knownArtistNames,
+            lookupMissing = false
+        )
         val extras = mutableMapOf<String, String>()
         setId?.let { extras["setId"] = it }
         
@@ -236,7 +251,7 @@ fun YtmSong.toTrack(
             id = id,
             title = name ?: "Unknown",
             type = trackType,
-            artists = artists?.map { it.toArtist(quality) } ?: emptyList(),
+            artists = resolvedArtists.map { it.toArtist(quality) },
             cover = thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(crop = true)
                 ?: getCover(id, quality),
             album = album,
@@ -298,7 +313,7 @@ fun YtmArtist.toArtist(
     return try {
         Artist(
             id = id,
-            name = name ?: "Unknown",
+            name = name?.usableArtistName() ?: "Unknown Artist",
             cover = thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(mapOf()),
             bio = description,
             extras = mutableMapOf<String, String>().apply {
@@ -312,7 +327,7 @@ fun YtmArtist.toArtist(
         println("Failed to convert YtmArtist to Artist: ${e.message}")
         Artist(
             id = id,
-            name = name ?: "Unknown Artist",
+            name = name?.usableArtistName() ?: "Unknown Artist",
             cover = null,
             bio = null,
             extras = mapOf("genuineArtist" to "true")
@@ -334,7 +349,7 @@ fun YtmArtist.toUser(
         
         User(
             id = id,
-            name = name ?: "Unknown",
+            name = name?.usableArtistName() ?: "Unknown Artist",
             cover = thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(mapOf()),
             subtitle = subscriberCountText,
             extras = mutableMapOf<String, String>().apply {
@@ -345,14 +360,14 @@ fun YtmArtist.toUser(
                 put("userType", "artist")
                 put("profileUrl", "https://music.youtube.com/channel/$id")
                 put("channelId", id)
-                put("displayName", name ?: "Unknown")
+                put("displayName", name?.usableArtistName() ?: "Unknown Artist")
             }
         )
     } catch (e: Exception) {
         println("Failed to convert YtmArtist to User: ${e.message}")
         User(
             id = id,
-            name = name ?: "Unknown User",
+            name = name?.usableArtistName() ?: "Unknown Artist",
             cover = null,
             subtitle = "Artist",
             extras = mapOf("isArtist" to "true", "userType" to "artist")

@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.extension.providers.playlists
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.auth.YouTubeAuthManager
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.endpoints.EchoEditPlaylistEndpoint
 import dev.brahmkshatriya.echo.extension.toPlaylist
 import dev.toastbits.ytmkt.model.external.PlaylistEditor
@@ -12,7 +13,8 @@ import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 class PlaylistManager(
     private val authManager: YouTubeAuthManager,
     private val editorEndpoint: EchoEditPlaylistEndpoint,
-    private val thumbnailQuality: ThumbnailProvider.Quality
+    private val thumbnailQuality: ThumbnailProvider.Quality,
+    private val artistNameResolver: ArtistNameResolver
 ) {
     suspend fun createPlaylist(title: String, description: String?): Playlist {
         val auth = authManager.requireAuth()
@@ -36,7 +38,7 @@ class PlaylistManager(
         val auth = authManager.requireAuth()
         return auth.AccountPlaylists.getAccountPlaylists().getOrThrow().mapNotNull {
             if (it.id != "VLSE") {
-                it.toPlaylist(thumbnailQuality) to false
+                it.toPlaylist(thumbnailQuality, artistNameResolver) to false
             } else {
                 null
             }

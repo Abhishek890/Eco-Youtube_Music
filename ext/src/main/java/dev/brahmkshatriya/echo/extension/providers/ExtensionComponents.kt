@@ -4,6 +4,7 @@ import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.YoutubeExtension
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.auth.YouTubeAuthManager
 import dev.brahmkshatriya.echo.extension.endpoints.*
 import dev.brahmkshatriya.echo.extension.providers.feeds.LibraryFeedProvider
@@ -27,6 +28,8 @@ class ExtensionComponents(
     private val settings: Settings,
     private val json: Json
 ) {
+    val artistNameResolver = ArtistNameResolver(api)
+
     //Core Settings
     
     val thumbnailQuality: ThumbnailProvider.Quality
@@ -50,16 +53,16 @@ class ExtensionComponents(
     val artistEndpoint = EchoArtistEndpoint(api)
     val artistMoreEndpoint = EchoArtistMoreEndpoint(api)
     val libraryEndpoint = EchoLibraryEndPoint(api)
-    val songEndpoint = EchoSongEndPoint(api)
+    val songEndpoint = EchoSongEndPoint(api, artistNameResolver)
     val songRelatedEndpoint = EchoSongRelatedEndpoint(api)
-    val playlistEndpoint = EchoPlaylistEndpoint(api)
+    val playlistEndpoint = EchoPlaylistEndpoint(api, artistNameResolver)
     val lyricsEndpoint = EchoLyricsEndPoint(api)
     val searchSuggestionsEndpoint = EchoSearchSuggestionsEndpoint(api)
     val searchEndpoint = EchoSearchEndpoint(api)
     val editorEndpoint = EchoEditPlaylistEndpoint(api)
     
     val enhancedSongEndpoint by lazy {
-        EchoEnhancedSongEndpoint(api, songEndpoint)
+        EchoEnhancedSongEndpoint(api, songEndpoint, artistNameResolver)
     }
 
     //Services
@@ -73,13 +76,13 @@ class ExtensionComponents(
     }
 
     val searchService by lazy {
-        YouTubeSearchService(api)
+        YouTubeSearchService(api, artistNameResolver)
     }
 
     //providers
 
     val libraryFeedProvider by lazy {
-        LibraryFeedProvider(api, authManager, libraryEndpoint)
+        LibraryFeedProvider(api, authManager, libraryEndpoint, artistNameResolver)
     }
 
     val searchFeedProvider by lazy {
@@ -91,11 +94,11 @@ class ExtensionComponents(
     }
 
     val radioGenerator by lazy {
-        RadioGenerator(api, songEndpoint, json, thumbnailQuality, trackCache)
+        RadioGenerator(api, songEndpoint, json, thumbnailQuality, trackCache, artistNameResolver)
     }
 
     val playlistManager by lazy {
-        PlaylistManager(authManager, editorEndpoint, thumbnailQuality)
+        PlaylistManager(authManager, editorEndpoint, thumbnailQuality, artistNameResolver)
     }
 
     val likeManager by lazy {

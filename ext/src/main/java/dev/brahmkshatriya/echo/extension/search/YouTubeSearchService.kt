@@ -9,6 +9,7 @@ import dev.brahmkshatriya.echo.extension.toAlbum
 import dev.brahmkshatriya.echo.extension.toArtist
 import dev.brahmkshatriya.echo.extension.toPlaylist
 import dev.brahmkshatriya.echo.extension.toTrack
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.toastbits.ytmkt.endpoint.SearchResults
 import dev.toastbits.ytmkt.endpoint.SearchType
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
@@ -22,7 +23,8 @@ import kotlinx.coroutines.coroutineScope
 
 
 class YouTubeSearchService(
-    private val api: YoutubeiApi
+    private val api: YoutubeiApi,
+    val artistNameResolver: ArtistNameResolver
 ) {
     data class CategorySearchResult(
         val type: SearchType,
@@ -92,18 +94,18 @@ class YouTubeSearchService(
         return shelves
     }
 
-    private fun convertMediaItem(
+    private suspend fun convertMediaItem(
         item: Any,
         thumbnailQuality: ThumbnailProvider.Quality
     ): EchoMediaItem? {
         return when (item) {
-            is YtmSong -> item.toTrack(thumbnailQuality)
-            is YtmArtist -> item.toArtist(thumbnailQuality)
+            is YtmSong -> item.toTrack(thumbnailQuality, artistNameResolver)
+            is YtmArtist -> artistNameResolver.resolve(listOf(item)).single().toArtist(thumbnailQuality)
             is YtmPlaylist -> {
                 if (item.type == YtmPlaylist.Type.ALBUM) {
-                    item.toAlbum(false, thumbnailQuality)
+                    item.toAlbum(false, thumbnailQuality, artistNameResolver)
                 } else {
-                    item.toPlaylist(thumbnailQuality)
+                    item.toPlaylist(thumbnailQuality, artistNameResolver)
                 }
             }
             else -> null
