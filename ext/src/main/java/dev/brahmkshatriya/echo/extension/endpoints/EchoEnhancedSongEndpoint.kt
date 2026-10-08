@@ -3,12 +3,17 @@ package dev.brahmkshatriya.echo.extension.endpoints
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.toTrack
 import dev.brahmkshatriya.echo.extension.usableArtistName
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
+import io.ktor.client.request.head
+import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Enhanced song endpoint that intelligently combines data from multiple sources.
@@ -37,13 +42,20 @@ class EchoEnhancedSongEndpoint(
         
         // Try ytm-kt first (faster, better quality data)
         val nameHints = ArtistNameResolver.namesFrom(fallbackTrack.artists)
-        val ytmTrack = runCatching {
-            api.LoadSong.loadSong(trackId).getOrThrow().toTrack(
+        val ytmLoadedTrack = runCatching {
+            val song = api.LoadSong.loadSong(trackId).getOrThrow()
+            val track = song.toTrack(
                 thumbnailQuality,
                 artistNameResolver,
                 knownArtistNames = nameHints
             )
+            val covers = ThumbnailProvider.Quality.byQuality(thumbnailQuality)
+                .mapNotNull { quality ->
+                    song.thumbnail_provider?.getThumbnailUrl(quality)?.toImageHolder(crop = true)
+                } + listOfNotNull(track.cover)
+            YtmLoadedTrack(track, covers.distinctBy(::coverUrl))
         }.getOrNull()
+        val ytmTrack = ytmLoadedTrack?.track
         
         if (ytmTrack != null) {
             // Check if we need legacy data for missing extras (lyricsId, relatedId, isLiked)
@@ -54,28 +66,36 @@ class EchoEnhancedSongEndpoint(
             if (needsLegacyExtras) {
                 println("ytm-kt track missing extras, fetching from legacy endpoint")
                 val legacyTrack = runCatching {
-                    echoSongEndpoint.loadSong(trackId).getOrThrow()
+                    echoSongEndpoint.loadSong(trackId, thumbnailQuality).getOrThrow()
                 }.getOrNull()
                 
                 val mergedExtras = buildMergedExtras(ytmTrack, legacyTrack, trackId, fallbackTrack)
-                return mergeWithYtmPriority(ytmTrack, legacyTrack, fallbackTrack, mergedExtras)
+                val cover = choosePlaybackCover(
+                    ytmLoadedTrack.covers + listOfNotNull(legacyTrack?.cover),
+                    fallbackTrack.cover
+                )
+                return mergeWithYtmPriority(ytmTrack, legacyTrack, fallbackTrack, mergedExtras, cover)
             } else {
                 println("ytm-kt track has all required extras, skipping legacy fetch")
                 val mergedExtras = buildMergedExtras(ytmTrack, null, trackId, fallbackTrack)
-                return mergeWithYtmPriority(ytmTrack, null, fallbackTrack, mergedExtras)
+                val cover = choosePlaybackCover(ytmLoadedTrack.covers, fallbackTrack.cover)
+                return mergeWithYtmPriority(ytmTrack, null, fallbackTrack, mergedExtras, cover)
             }
         }
         
         // Fallback to legacy if ytm-kt failed
         println("ytm-kt failed, trying legacy endpoint")
         val legacyTrack = runCatching {
-            echoSongEndpoint.loadSong(trackId).getOrThrow()
+            echoSongEndpoint.loadSong(trackId, thumbnailQuality).getOrThrow()
         }.getOrNull()
         
         val mergedExtras = buildMergedExtras(null, legacyTrack, trackId, fallbackTrack)
         
         return when {
-            legacyTrack != null -> mergeWithLegacyPriority(legacyTrack, fallbackTrack, mergedExtras)
+            legacyTrack != null -> {
+                val cover = choosePlaybackCover(listOfNotNull(legacyTrack.cover), fallbackTrack.cover)
+                mergeWithLegacyPriority(legacyTrack, fallbackTrack, mergedExtras, cover)
+            }
             else -> createFallbackTrack(fallbackTrack, mergedExtras, trackId)
         }
     }
@@ -120,7 +140,8 @@ class EchoEnhancedSongEndpoint(
         ytmTrack: Track,
         legacyTrack: Track?,
         fallbackTrack: Track,
-        mergedExtras: Map<String, String>
+        mergedExtras: Map<String, String>,
+        cover: ImageHolder?
     ): Track {
         // ytmTrack from ytm-kt NEVER has streamables, so we must create them
         val streamables = if (ytmTrack.streamables.isNotEmpty()) {
@@ -130,8 +151,7 @@ class EchoEnhancedSongEndpoint(
         }
         
         return ytmTrack.copy(
-            // The original cover was already shown; keep it over playback-time replacements.
-            cover = mergeCover(fallbackTrack.cover, ytmTrack.cover, legacyTrack?.cover),
+            cover = cover,
             
             // Prefer ytm album, fallback to legacy
             album = ytmTrack.album ?: legacyTrack?.album,
@@ -153,10 +173,11 @@ class EchoEnhancedSongEndpoint(
     private fun mergeWithLegacyPriority(
         legacyTrack: Track,
         fallbackTrack: Track,
-        mergedExtras: Map<String, String>
+        mergedExtras: Map<String, String>,
+        cover: ImageHolder?
     ): Track {
         return legacyTrack.copy(
-            cover = mergeCover(fallbackTrack.cover, legacyTrack.cover),
+            cover = cover,
             artists = mergeArtistsById(legacyTrack.artists, fallbackTrack.artists),
             extras = mergedExtras,
             streamables = legacyTrack.streamables.takeIf { it.isNotEmpty() } 
@@ -195,11 +216,16 @@ class EchoEnhancedSongEndpoint(
     }
 
     companion object {
-        internal fun mergeCover(
-            original: ImageHolder?,
-            refreshed: ImageHolder?,
-            legacy: ImageHolder? = null
-        ): ImageHolder? = original ?: refreshed ?: legacy
+        internal suspend fun choosePlaybackCover(
+            refreshedCovers: List<ImageHolder>,
+            originalCover: ImageHolder?,
+            isAvailable: suspend (ImageHolder) -> Boolean
+        ): ImageHolder? {
+            for (cover in refreshedCovers) {
+                if (isAvailable(cover)) return cover
+            }
+            return originalCover
+        }
 
         internal fun mergeArtistsById(
             primary: List<Artist>,
@@ -227,4 +253,34 @@ class EchoEnhancedSongEndpoint(
             }
         }
     }
+
+    private suspend fun choosePlaybackCover(
+        refreshedCovers: List<ImageHolder>,
+        originalCover: ImageHolder?
+    ): ImageHolder? {
+        val originalUrl = originalCover?.let(::coverUrl)
+        return withTimeoutOrNull(1_500) {
+            choosePlaybackCover(refreshedCovers, originalCover) { cover ->
+                coverUrl(cover) == originalUrl || isImageAvailable(cover)
+            }
+        } ?: originalCover
+    }
+
+    private suspend fun isImageAvailable(cover: ImageHolder): Boolean {
+        val image = cover as? ImageHolder.NetworkRequestImageHolder ?: return true
+        return try {
+            val response = api.client.head(image.request.url)
+            response.status.value in 200..299 && response.headers[HttpHeaders.ContentType]
+                ?.substringBefore(';')?.startsWith("image/") == true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private data class YtmLoadedTrack(val track: Track, val covers: List<ImageHolder>)
+
+    private fun coverUrl(cover: ImageHolder): String? =
+        (cover as? ImageHolder.NetworkRequestImageHolder)?.request?.url
 }

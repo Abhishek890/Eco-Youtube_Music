@@ -37,7 +37,8 @@ open class EchoSongEndPoint(
     private val artistNameResolver: ArtistNameResolver
 ) : ApiEndpoint() {
     suspend fun loadSong(
-        @Suppress("LocalVariableName") song_id: String
+        @Suppress("LocalVariableName") song_id: String,
+        thumbnailQuality: ThumbnailProvider.Quality = ThumbnailProvider.Quality.HIGH
     ): Result<Track> = runCatching {
         val nextResponse: HttpResponse = api.client.request {
             endpointPath("next")
@@ -48,7 +49,7 @@ open class EchoSongEndPoint(
                 put("videoId", song_id)
             }
         }
-        return@runCatching parseSongResponse(song_id, nextResponse, api).getOrThrow()
+        return@runCatching parseSongResponse(song_id, nextResponse, api, thumbnailQuality).getOrThrow()
     }
 
     suspend fun loadSongRadio(
@@ -115,7 +116,8 @@ open class EchoSongEndPoint(
     private suspend fun parseSongResponse(
         songId: String,
         response: HttpResponse,
-        api: YoutubeiApi
+        api: YoutubeiApi,
+        thumbnailQuality: ThumbnailProvider.Quality
     ) = runCatching {
         val responseData: YoutubeiNextResponse = response.body()
         val tabs: List<YoutubeiNextResponse.Tab> =
@@ -143,14 +145,14 @@ open class EchoSongEndPoint(
         val duration = parseYoutubeDurationString(video.lengthText.first_text, api.dataLocale)?.inWholeMilliseconds
 
         val cover = ThumbnailProvider.fromThumbnails(video.thumbnail.thumbnails)
-            ?.getThumbnailUrl(ThumbnailProvider.Quality.HIGH)?.toImageHolder()
+            ?.getThumbnailUrl(thumbnailQuality)?.toImageHolder(crop = true)
         return@runCatching Track(
             id = songId,
             title = title,
             cover = cover,
             artists = artistNameResolver.resolve(artists, lookupMissing = false)
-                .map { it.toArtist(ThumbnailProvider.Quality.HIGH) },
-            album = album?.toAlbum(false, ThumbnailProvider.Quality.HIGH, artistNameResolver),
+                .map { it.toArtist(thumbnailQuality) },
+            album = album?.toAlbum(false, thumbnailQuality, artistNameResolver),
             duration = duration,
             extras = mutableMapOf<String, String>().apply {
                 relatedBrowseId?.let { put("relatedId", it) }
