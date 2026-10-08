@@ -237,7 +237,8 @@ suspend fun YtmSong.toTrack(
         val resolvedArtists = artistNameResolver.resolve(
             artists,
             knownArtists = this.album?.artists.orEmpty() + knownArtists,
-            knownNames = knownArtistNames
+            knownNames = knownArtistNames,
+            lookupMissing = false
         )
         val extras = mutableMapOf<String, String>()
         setId?.let { extras["setId"] = it }

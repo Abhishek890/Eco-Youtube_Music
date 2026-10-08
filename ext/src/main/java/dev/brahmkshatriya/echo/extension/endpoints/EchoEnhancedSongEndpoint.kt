@@ -197,17 +197,25 @@ class EchoEnhancedSongEndpoint(
             primary: List<Artist>,
             vararg fallbacks: List<Artist>?
         ): List<Artist> {
-            if (primary.isEmpty()) return fallbacks.filterNotNull().firstOrNull { it.isNotEmpty() }.orEmpty()
+            val candidates = listOfNotNull(primary.takeIf { it.isNotEmpty() }) +
+                fallbacks.filterNotNull().filter { it.isNotEmpty() }
+            if (candidates.isEmpty()) return emptyList()
+
+            // During playback, the original feed/search item is the user's known credit.
+            // Prefer the latest named candidate so a later uploader ID cannot replace it.
+            val selected = candidates.lastOrNull { candidate ->
+                candidate.any { it.name.usableArtistName() != null }
+            } ?: candidates.first()
             val namedById = buildMap {
-                fallbacks.filterNotNull().flatten().forEach { artist ->
+                candidates.asReversed().flatten().forEach { artist ->
                     if (artist.id.isNotBlank()) {
                         artist.name.usableArtistName()?.let { putIfAbsent(artist.id, it) }
                     }
                 }
             }
-            return primary.map { artist ->
+            return selected.map { artist ->
                 if (artist.name.usableArtistName() != null) artist
-                else namedById[artist.id]?.let { artist.copy(name = it) } ?: artist
+                    else namedById[artist.id]?.let { artist.copy(name = it) } ?: artist
             }
         }
     }

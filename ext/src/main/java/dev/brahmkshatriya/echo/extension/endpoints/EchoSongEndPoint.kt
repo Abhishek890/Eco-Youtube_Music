@@ -148,7 +148,8 @@ open class EchoSongEndPoint(
             id = songId,
             title = title,
             cover = cover,
-            artists = artistNameResolver.resolve(artists).map { it.toArtist(ThumbnailProvider.Quality.HIGH) },
+            artists = artistNameResolver.resolve(artists, lookupMissing = false)
+                .map { it.toArtist(ThumbnailProvider.Quality.HIGH) },
             album = album?.toAlbum(false, ThumbnailProvider.Quality.HIGH, artistNameResolver),
             duration = duration,
             extras = mutableMapOf<String, String>().apply {

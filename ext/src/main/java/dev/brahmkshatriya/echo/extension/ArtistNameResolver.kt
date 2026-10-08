@@ -26,7 +26,8 @@ class ArtistNameResolver(
     suspend fun resolve(
         artists: List<YtmArtist>?,
         knownArtists: List<YtmArtist>? = null,
-        knownNames: Map<String, String> = emptyMap()
+        knownNames: Map<String, String> = emptyMap(),
+        lookupMissing: Boolean = true
     ): List<YtmArtist> {
         if (artists.isNullOrEmpty()) return emptyList()
 
@@ -40,9 +41,13 @@ class ArtistNameResolver(
         }
 
         return artists.map { artist ->
-            val name = artist.name.usableArtistName()?.also { cacheName(artist.id, it) }
-                ?: hints[artist.id]?.also { cacheName(artist.id, it) }
-                ?: artist.id.takeIf(::isLookupId)?.let { lookupName(it) }
+            val name = artist.name.usableArtistName()?.also {
+                if (lookupMissing) cacheName(artist.id, it)
+            }
+                ?: hints[artist.id]?.also {
+                    if (lookupMissing) cacheName(artist.id, it)
+                }
+                ?: if (lookupMissing) artist.id.takeIf(::isLookupId)?.let { lookupName(it) } else null
             artist.copy(name = name ?: artist.name)
         }
     }

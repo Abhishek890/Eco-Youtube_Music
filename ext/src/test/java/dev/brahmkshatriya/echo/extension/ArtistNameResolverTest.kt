@@ -48,6 +48,24 @@ class ArtistNameResolverTest {
     }
 
     @Test
+    fun `does not turn a track channel ID into its channel page title`() = runBlocking {
+        var calls = 0
+        val resolver = ArtistNameResolver {
+            calls++
+            YtmArtist(it, name = "Studio Channel")
+        }
+
+        resolver.resolve(listOf(YtmArtist("UC-studio")))
+        val trackCredits = resolver.resolve(
+            listOf(YtmArtist("UC-studio", name = "Unknown")),
+            lookupMissing = false
+        )
+
+        assertEquals("Unknown", trackCredits.first().name)
+        assertEquals(1, calls)
+    }
+
+    @Test
     fun `does not look up synthetic IDs and leaves meaningful labels intact`() = runBlocking {
         var calls = 0
         val resolver = ArtistNameResolver {
@@ -68,16 +86,29 @@ class ArtistNameResolverTest {
     }
 
     @Test
-    fun `matches fallback track artist names by ID`() {
+    fun `uses the original feed credit instead of a different upload channel`() {
         fun artist(id: String, name: String) = Artist(id = id, name = name)
 
         val merged = EchoEnhancedSongEndpoint.mergeArtistsById(
-            listOf(artist("UC1", "Unknown"), artist("UC2", "Artist B")),
-            listOf(artist("UC1", "Artist A"), artist("UC3", "Wrong artist"))
+            listOf(artist("UC-studio", "Studio Channel")),
+            listOf(artist("UC-performer", "Artist A"))
+        )
+
+        assertEquals(listOf("UC-performer"), merged.map { it.id })
+        assertEquals(listOf("Artist A"), merged.map { it.name })
+    }
+
+    @Test
+    fun `fills an unknown feed credit only from a matching artist ID`() {
+        fun artist(id: String, name: String) = Artist(id = id, name = name)
+
+        val merged = EchoEnhancedSongEndpoint.mergeArtistsById(
+            listOf(artist("UC1", "Studio Channel"), artist("UC2", "Artist B")),
+            listOf(artist("UC1", "Artist A"), artist("UC2", "Unknown"))
         )
 
         assertEquals(listOf("Artist A", "Artist B"), merged.map { it.name })
-        assertTrue(merged.none { it.name == "Wrong artist" })
+        assertTrue(merged.none { it.name == "Studio Channel" })
     }
 
     @Test
