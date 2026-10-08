@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension.endpoints
 
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.toTrack
@@ -129,8 +130,8 @@ class EchoEnhancedSongEndpoint(
         }
         
         return ytmTrack.copy(
-            // Prefer ytm cover, fallback to original then legacy
-            cover = ytmTrack.cover ?: fallbackTrack.cover ?: legacyTrack?.cover,
+            // The original cover was already shown; keep it over playback-time replacements.
+            cover = mergeCover(fallbackTrack.cover, ytmTrack.cover, legacyTrack?.cover),
             
             // Prefer ytm album, fallback to legacy
             album = ytmTrack.album ?: legacyTrack?.album,
@@ -155,6 +156,7 @@ class EchoEnhancedSongEndpoint(
         mergedExtras: Map<String, String>
     ): Track {
         return legacyTrack.copy(
+            cover = mergeCover(fallbackTrack.cover, legacyTrack.cover),
             artists = mergeArtistsById(legacyTrack.artists, fallbackTrack.artists),
             extras = mergedExtras,
             streamables = legacyTrack.streamables.takeIf { it.isNotEmpty() } 
@@ -193,6 +195,12 @@ class EchoEnhancedSongEndpoint(
     }
 
     companion object {
+        internal fun mergeCover(
+            original: ImageHolder?,
+            refreshed: ImageHolder?,
+            legacy: ImageHolder? = null
+        ): ImageHolder? = original ?: refreshed ?: legacy
+
         internal fun mergeArtistsById(
             primary: List<Artist>,
             vararg fallbacks: List<Artist>?
