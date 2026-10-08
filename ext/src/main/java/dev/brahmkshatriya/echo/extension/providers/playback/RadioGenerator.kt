@@ -11,6 +11,7 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.ModelTypeHelper
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.endpoints.EchoSongEndPoint
 import dev.brahmkshatriya.echo.extension.toTrack
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
@@ -25,7 +26,8 @@ class RadioGenerator(
     private val songEndpoint: EchoSongEndPoint,
     private val json: Json,
     private val thumbnailQuality: ThumbnailProvider.Quality,
-    private val trackCache: MutableMap<String, PagedData<Track>>
+    private val trackCache: MutableMap<String, PagedData<Track>>,
+    private val artistNameResolver: ArtistNameResolver
 ) {
     suspend fun generateRadio(item: EchoMediaItem, context: EchoMediaItem? = null): Radio {
         return when (item) {
@@ -42,7 +44,7 @@ class RadioGenerator(
         val cont = context?.extras?.get("cont")
         val result = songEndpoint.loadSongRadio(track.id, cont).getOrThrow()
         val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong ->
-            song.toTrack(thumbnailQuality)
+            song.toTrack(thumbnailQuality, artistNameResolver)
         }
         
         return Radio(
@@ -65,7 +67,7 @@ class RadioGenerator(
         val id = "radio_${artist.id}"
         val result = api.ArtistRadio.getArtistRadio(artist.id, null).getOrThrow()
         val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong -> 
-            song.toTrack(thumbnailQuality)
+            song.toTrack(thumbnailQuality, artistNameResolver)
         }
         
         return Radio(

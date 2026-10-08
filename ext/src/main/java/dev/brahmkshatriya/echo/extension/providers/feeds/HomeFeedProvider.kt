@@ -5,6 +5,7 @@ import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.extension.YoutubeExtension
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.endpoints.EchoSongFeedEndpoint
 import dev.brahmkshatriya.echo.extension.endpoints.EchoVisitorEndpoint
 import dev.brahmkshatriya.echo.extension.toShelf
@@ -15,7 +16,8 @@ import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 class HomeFeedProvider(
     private val api: YoutubeiApi,
     private val songFeedEndpoint: EchoSongFeedEndpoint,
-    private val visitorEndpoint: EchoVisitorEndpoint
+    private val visitorEndpoint: EchoVisitorEndpoint,
+    private val artistNameResolver: ArtistNameResolver
 ) {
     suspend fun loadHomeFeed(thumbnailQuality: ThumbnailProvider.Quality): Feed<Shelf> {
         if (api.visitorId == null) {
@@ -41,7 +43,7 @@ class HomeFeedProvider(
                     ).getOrThrow()
                     
                     val data = result.layouts.map { itemLayout ->
-                        itemLayout.toShelf(api, YoutubeExtension.SINGLES, thumbnailQuality)
+                        itemLayout.toShelf(api, YoutubeExtension.SINGLES, thumbnailQuality, artistNameResolver)
                     }
                     
                     Page(data, result.ctoken)

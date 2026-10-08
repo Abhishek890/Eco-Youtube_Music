@@ -7,6 +7,7 @@ import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.extension.auth.YouTubeAuthManager
+import dev.brahmkshatriya.echo.extension.ArtistNameResolver
 import dev.brahmkshatriya.echo.extension.endpoints.EchoLibraryEndPoint
 import dev.brahmkshatriya.echo.extension.toEchoMediaItem
 import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
@@ -16,7 +17,8 @@ import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 class LibraryFeedProvider(
     private val api: YoutubeiApi,
     private val authManager: YouTubeAuthManager,
-    private val libraryEndpoint: EchoLibraryEndPoint
+    private val libraryEndpoint: EchoLibraryEndPoint,
+    private val artistNameResolver: ArtistNameResolver
 ) {
     suspend fun loadLibraryFeed(thumbnailQuality: ThumbnailProvider.Quality): Feed<Shelf> {
         val tabs = listOf(
@@ -98,7 +100,7 @@ class LibraryFeedProvider(
             val auth = authManager.requireAuth()
             val artists = auth.LikedArtists.getLikedArtists().getOrThrow()
             val shelves = artists.mapNotNull { artist ->
-                artist.toEchoMediaItem(false, thumbnailQuality)?.toShelf()
+                artist.toEchoMediaItem(false, thumbnailQuality, artistNameResolver)?.toShelf()
             }
             Page(shelves, null)
         } catch (e: Exception) {
@@ -115,7 +117,7 @@ class LibraryFeedProvider(
         val auth = authManager.requireAuth()
         val (result, ctoken) = libraryEndpoint.loadLibraryFeed(browseId, continuation)
         val shelves = result.mapNotNull { playlist ->
-            playlist.toEchoMediaItem(false, thumbnailQuality)?.let { Shelf.Item(it) }
+            playlist.toEchoMediaItem(false, thumbnailQuality, artistNameResolver)?.let { Shelf.Item(it) }
         }
         return Page(shelves, ctoken)
     }
